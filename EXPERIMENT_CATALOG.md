@@ -34,29 +34,29 @@ execution order: finish the AWS phase before starting the grouped Runpod phase.
 
 Proposed rows must be resolved before a model-dependent experiment is accepted.
 The model-free EXP-01 and EXP-10 communication experiments do not depend on this
-contract. The current proposal uses one exact dense model and one existing
-dataset for all comparable training experiments. Changing either is allowed
-only when the experiment's hypothesis makes it unavoidable.
+contract. The accepted input contract uses one exact dense model and one
+existing dataset for all comparable training experiments. Changing either is
+allowed only when the experiment's hypothesis makes it unavoidable.
 
 | Decision area | Choice | Status |
 | --- | --- | --- |
-| Dense workload model | One exact dense base model for all model-dependent experiments; proposed model: `Qwen/Qwen3-1.7B-Base` | proposed |
+| Dense workload model | Use `Qwen/Qwen3-1.7B-Base` at the revision pinned in `configs/inputs.lock.yaml` for every model-dependent experiment | accepted |
 | Comparable initialization | Restore every comparable variant from the same pinned pretrained checkpoint, batches, and seeds | accepted |
 | Training task and objective | Full-parameter continued pretraining with autoregressive next-token cross-entropy; exclude SFT, LoRA, and training from scratch | accepted |
 | Benchmark purpose and output | Exercise the complete training path for short infrastructure measurements, not convergence; discard resulting weights except for the optional restart extension | accepted |
-| Dataset, tokenizer, and preparation | Use `Salesforce/wikitext` `wikitext-103-raw-v1`, the model tokenizer, and one deterministic packed token stream without custom cleaning or curation | proposed |
+| Dataset, tokenizer, and preparation | Use pinned `Salesforce/wikitext` `wikitext-103-raw-v1`, the pinned model tokenizer, and deterministic canonical token streams without custom cleaning or curation | accepted |
 | Revision and sample identity | Pin model, tokenizer, dataset, and preprocessing revisions and preserve sample hashes before comparable runs | accepted |
 | Default benchmark precision | Use BF16 except when precision is the independent variable in EXP-02 or a compatibility requirement dictates otherwise | proposed |
 | Evaluation boundary | Use correctness gates and short loss/perplexity sanity checks; exclude downstream model-quality suites and training-to-convergence claims | proposed |
 
 Rows marked `accepted` summarize workload rules already governed by
 [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md); they are repeated here only to
-make the proposed workload readable. Rows marked `proposed` remain proposals and do
-not become project decisions until they are promoted to that file.
+make the shared workload readable. Rows marked `proposed` remain proposals and
+do not become project decisions until they are promoted to that file.
 
 ### Why this model
 
-`Qwen/Qwen3-1.7B-Base` is proposed because it is:
+`Qwen/Qwen3-1.7B-Base` was selected because it is:
 
 - A decoder-only causal language model suitable for the selected training
   objective.
@@ -71,10 +71,9 @@ not become project decisions until they are promoted to that file.
 - Supported by NVIDIA Megatron Bridge through an existing Qwen3 1.7B pretraining
   recipe, avoiding a new NeMo/Megatron model implementation.
 
-The proposed workload uses the base model, not the instruction/chat-tuned
-model. The pretrained checkpoint would be restored before each comparable
-variant so that precision or parallelism changes are measured from identical
-weights.
+The accepted workload uses the base model, not the instruction/chat-tuned model.
+The pretrained checkpoint is restored before each comparable variant so that
+precision or parallelism changes are measured from identical weights.
 
 For native PyTorch experiments, Hugging Face Transformers may supply the Qwen3
 model definition and checkpoint loader, but the training loop, optimizer, and
@@ -123,7 +122,7 @@ actions above on a qualified NVIDIA compute host.
 
 ### One model versus multiple models
 
-The proposed default is **one exact dense model**, not a collection of convenient
+The accepted default is **one exact dense model**, not a collection of convenient
 models. This keeps tokens/second, memory, numerical behavior, and loss
 comparisons interpretable across DDP, FSDP, TP, PP, CP, and hybrid layouts.
 
@@ -134,7 +133,7 @@ to revisit the model—not permission to substitute a model inside one result.
 
 ### Dataset and tokenization
 
-The proposed dataset is the existing `Salesforce/wikitext` dataset with the
+The selected dataset is the existing `Salesforce/wikitext` dataset with the
 `wikitext-103-raw-v1` configuration. It contains train, validation, and test
 splits and is small enough to download and preprocess once without making data
 engineering a project of its own.
@@ -144,9 +143,9 @@ The preparation pipeline is deliberately minimal:
 1. Pin the dataset revision and download the existing splits.
 2. Tokenize with the pinned Qwen3 tokenizer.
 3. Insert the model's EOS token between documents.
-4. Concatenate and pack tokens into deterministic fixed-length sequences.
-5. Materialize one canonical token stream plus adapters/indexes needed by
-   native PyTorch and Megatron.
+4. Concatenate each source split into a deterministic canonical token stream.
+5. Derive fixed-length samples as deterministic slices through loader adapters
+   for native PyTorch and Megatron, without retokenizing.
 6. Preserve the existing train/validation/test split; do not curate, clean,
    deduplicate, or create a custom corpus.
 
@@ -160,15 +159,14 @@ Deterministic synthetic token IDs remain allowed for pure compute/communication
 microbenchmarks and fault injection, but they cannot replace WikiText in an
 end-to-end training comparison.
 
-If the shared workload contract is accepted, every end-to-end training
-experiment uses WikiText-103 and the pinned Qwen tokenizer. EXP-01 and EXP-10
-do not train a model, and isolated kernel/collective sub-benchmarks may use
-synthetic tensors.
+Every end-to-end training experiment uses WikiText-103 and the pinned Qwen
+tokenizer. EXP-01 and EXP-10 do not train a model, and isolated
+kernel/collective sub-benchmarks may use synthetic tensors.
 
 ### Training type and objective
 
-The accepted training task is **full-parameter continued pretraining**. Under
-the proposed workload, it starts from the Qwen3 base checkpoint. Every trainable
+The accepted training task is **full-parameter continued pretraining** from the
+selected Qwen3 base checkpoint. Every trainable
 parameter participates in forward, backward, gradient synchronization/sharding,
 optimizer state, and checkpointing. This exercises the complete
 distributed-training path without the cost of pretraining a useful model from
@@ -257,10 +255,10 @@ Not required:
 Thus evaluation acts as a **correctness guardrail**, not as a separate model
 evaluation research program.
 
-### Proposed supporting libraries
+### Supporting libraries
 
-Accepting this workload contract adds the following narrowly scoped libraries
-to the approved toolset:
+The accepted input workload adds the following narrowly scoped libraries to the
+approved toolset:
 
 - `transformers` and `safetensors` for the Qwen model definition/checkpoint in
   native PyTorch experiments.
@@ -1008,9 +1006,8 @@ generation, memory technology, CPU allocation, and interconnect all differ.
 
 The following decisions should be made before implementation begins:
 
-1. Accept the remaining proposed workload choices: Qwen3-1.7B-Base, the
-   WikiText-103 tokenization/packing pipeline, BF16 as the default benchmark
-   precision, and the correctness-only evaluation boundary?
+1. Accept the remaining proposed workload choices: BF16 as the default
+   benchmark precision and the correctness-only evaluation boundary?
 2. Accept the proposed core set as-is, or set an overall GPU-hour/budget cap?
 3. After the 14 core experiments, is the optional distributed-checkpoint
    extension worth its additional implementation time and GPU cost?

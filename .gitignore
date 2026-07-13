@@ -221,6 +221,17 @@ __marimo__/
 .DS_Store
 .idea/
 
+# Local credentials and provider/registry state
+/.aws/
+/.docker/
+/.ngc/
+/.runpod/
+/.config/gh/
+.env.*
+!.env.example
+configs/*.local.yaml
+configs/*.resolved.yaml
+
 # Downloaded and generated training data
 data/downloads/
 data/raw/
@@ -232,10 +243,25 @@ data/cache/
 /model-cache/
 /models/
 /checkpoints/
+/converted-checkpoints/
+/exports/
 *.safetensors
 *.ckpt
 *.pt
 *.pth
+*.nemo
+pytorch_model*.bin
+
+# Framework and compiler caches
+/.nv/
+/.torch/
+/.torch_extensions/
+/torch_compile_debug/
+/triton_cache/
+/wandb/
+/lightning_logs/
+/nemo_experiments/
+/results/
 
 # Experiment outputs and large profiler artifacts
 artifacts/**
@@ -243,3 +269,12 @@ artifacts/**
 *.nsys-rep
 *.ncu-rep
 *.qdrep
+events.out.tfevents.*
+core
+core.*
+
+# Local container build exports
+/.buildx/
+*.dockerbuild
+*.docker.tar
+*.oci.tar

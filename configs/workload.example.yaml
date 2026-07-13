@@ -4,14 +4,14 @@ source: ../EXPERIMENT_CATALOG.md
 
 model:
   id: Qwen/Qwen3-1.7B-Base
-  revision: null # Pin before acceptance.
-  tokenizer_revision: null # Pin before acceptance.
+  revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+  tokenizer_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
 
 dataset:
   id: Salesforce/wikitext
   configuration: wikitext-103-raw-v1
-  revision: null # Pin before acceptance.
-  preprocessing_version: null # Set when the packing pipeline exists.
+  revision: b08601e04326c79dfdd32d625aee71d232d685c3
+  preprocessing_version: qwen3-wikitext-v1
 
 training:
   type: full_parameter_continued_pretraining

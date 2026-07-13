@@ -19,8 +19,25 @@ class ValidationError(RuntimeError):
     """Raised when a repository contract is violated."""
 
 
+def repository_files() -> list[Path]:
+    completed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode(errors="replace").strip()
+        raise ValidationError(f"cannot list active repository files: {detail}")
+    return sorted(
+        ROOT / raw_path.decode()
+        for raw_path in completed.stdout.split(b"\0")
+        if raw_path
+    )
+
+
 def validate_yaml() -> int:
-    paths = sorted(ROOT.rglob("*.yaml"))
+    paths = [path for path in repository_files() if path.suffix == ".yaml"]
     try:
         import yaml  # type: ignore[import-not-found]
     except ModuleNotFoundError:
@@ -59,7 +76,8 @@ def validate_yaml() -> int:
 def validate_markdown_links() -> int:
     link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
     checked = 0
-    for document in sorted(ROOT.rglob("*.md")):
+    documents = [path for path in repository_files() if path.suffix == ".md"]
+    for document in documents:
         document_text = document.read_text(encoding="utf-8")
         for raw_target in link_pattern.findall(document_text):
             target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
@@ -85,10 +103,8 @@ def validate_no_legacy_experiment_ids() -> int:
     checked = 0
     candidate_paths = [
         path
-        for path in ROOT.rglob("*")
-        if path.is_file()
-        and ".git" not in path.parts
-        and (
+        for path in repository_files()
+        if (
             path.suffix in {".md", ".py", ".yaml"}
             or path.name in {"AGENTS.md", "Makefile"}
         )

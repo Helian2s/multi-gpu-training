@@ -209,8 +209,14 @@ artifact.
 Comparable variants restore the same pinned pretrained checkpoint, input
 batches, and seeds. Model, tokenizer, dataset, and preprocessing revisions plus
 deterministic sample hashes must be recorded before results are treated as
-comparable. The exact model, dataset/tokenization choice, default precision, and
-evaluation boundary remain proposals in the catalog until separately accepted.
+comparable. The accepted model and tokenizer are
+`Qwen/Qwen3-1.7B-Base` at revision
+`ea980cb0a6c2ae4b936e82123acc929f1cec04c1`. The accepted dataset is
+`Salesforce/wikitext` `wikitext-103-raw-v1` at revision
+`b08601e04326c79dfdd32d625aee71d232d685c3`, processed under the
+`qwen3-wikitext-v1` contract in `configs/inputs.lock.yaml`. Default precision
+and the evaluation boundary remain proposals in the catalog until separately
+accepted.
 
 The normal progression is:
 
@@ -349,6 +355,9 @@ measurement.
 | SciPy | Confidence intervals and statistical comparisons when required |
 | pytest | Correctness checks for training, sharding, checkpoint, and analysis code |
 | Ruff | Python linting and formatting |
+| Hugging Face Hub and Datasets | Downloading the pinned public model, tokenizer, and WikiText artifacts |
+| Transformers, Tokenizers, and Safetensors | Native PyTorch Qwen3 definition, tokenizer execution, and checkpoint format |
+| PyArrow | Deterministic reading of the pinned WikiText Parquet shards |
 
 Additional libraries must be justified by a concrete experiment, pinned, and
 added to this decision record before becoming shared project infrastructure.
@@ -778,6 +787,36 @@ timestamps were not captured; no earlier chronology is implied by their IDs.
   shared model/data contract. Model-dependent experiments remain `proposed`
   until the unresolved workload rows and compatibility gates are accepted. No
   row in the experiment-status table is changed by this decision.
+
+### PD-021 — Accept and pin the shared model and input dataset
+
+- **Recorded:** 2026-07-13
+- **Status:** Accepted
+- **Supersedes:** PD-005's deferral of the exact model and dataset and PD-020's
+  `proposed` status for the dense workload model and dataset/tokenizer pipeline.
+  It leaves the BF16 default and correctness-only evaluation boundary proposed.
+- **Decision:** Use `Qwen/Qwen3-1.7B-Base` and its tokenizer at immutable Hub
+  revision `ea980cb0a6c2ae4b936e82123acc929f1cec04c1`. Use
+  `Salesforce/wikitext` `wikitext-103-raw-v1` at immutable Hub revision
+  `b08601e04326c79dfdd32d625aee71d232d685c3`. Apply the tracked
+  `qwen3-wikitext-v1` preprocessing contract: preserve source split and row
+  order, tokenize without added special tokens, append EOS to every non-empty
+  record, retain empty records as zero-token offset/hash entries, and create
+  canonical per-split token streams with document offsets and hashes.
+  Fixed-length training samples are deterministic slices of those streams.
+- **Rationale:** The dense model has a public Apache-2.0 base checkpoint,
+  dimensions compatible with the selected parallel degrees, and an NVIDIA
+  Megatron Bridge recipe. WikiText-103 is public, compact, and sufficient for
+  infrastructure-focused continued-pretraining measurements without creating a
+  data-engineering project. Immutable revisions and one tokenization contract
+  make PyTorch and Megatron comparisons reproducible.
+- **Consequences:** `transformers`, `tokenizers`, `safetensors`,
+  `huggingface_hub`, `datasets`, and PyArrow become approved preparation/runtime
+  libraries and are pinned in `requirements-preparation.txt`. Downloaded model,
+  dataset, and processed files remain outside Git. Their generated manifest and
+  hashes govern uploads to S3 and the Runpod network volume. Model-dependent
+  experiment rows remain `proposed` until the remaining shared-workload choices
+  and experiment-specific compatibility gates are accepted.
 
 ## Primary references
 

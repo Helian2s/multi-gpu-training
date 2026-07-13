@@ -32,6 +32,7 @@ within those constraints.
 ├── tests/                 # Tests for shared and experiment-specific code
 ├── AGENTS.md              # Durable Codex working agreements and safety gates
 ├── Makefile               # Stable local entry points
+├── requirements-preparation.txt # Pinned local input-preparation environment
 ├── EXPERIMENT_CATALOG.md  # Proposed experiments and lifecycle status
 └── PROJECT_DECISIONS.md   # Current decisions and append-only decision log
 ```

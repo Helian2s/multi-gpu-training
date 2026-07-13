@@ -8,6 +8,9 @@ Currently available:
 
 - `new_experiment.py`: instantiate an accepted experiment from the canonical
   template.
+- `prepare_inputs.py`: download the accepted immutable Qwen3 and WikiText
+  snapshots, then create canonical per-split token streams, document indexes,
+  hashes, and a reproducibility manifest.
 - `validate_repo.py`: validate YAML syntax, local Markdown links, continuous and
   matching catalog IDs/titles, shared-workload row/status structure,
   AWS-then-Runpod ordering, single-provider placement, and compute-profile
