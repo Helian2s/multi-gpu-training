@@ -45,6 +45,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Tokenize previously downloaded inputs.",
     )
+    mode.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Verify downloaded and processed inputs against their manifest.",
+    )
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -319,6 +324,134 @@ def package_versions() -> dict[str, str]:
     return {name: importlib.metadata.version(name) for name in packages}
 
 
+def compare_inventory(
+    label: str, directory: Path, expected: Any
+) -> list[dict[str, Any]]:
+    if not directory.is_dir():
+        raise PreparationError(f"{label} directory does not exist: {directory}")
+    if not isinstance(expected, list):
+        raise PreparationError(f"manifest has no valid {label} inventory")
+    if any(
+        not isinstance(record, dict)
+        or not isinstance(record.get("path"), str)
+        or not isinstance(record.get("bytes"), int)
+        or not isinstance(record.get("sha256"), str)
+        for record in expected
+    ):
+        raise PreparationError(f"manifest has an invalid {label} inventory record")
+    expected_paths = [record["path"] for record in expected]
+    if len(expected_paths) != len(set(expected_paths)):
+        raise PreparationError(f"manifest has duplicate {label} inventory paths")
+    actual = inventory(directory)
+    if actual != expected:
+        expected_by_path = {record["path"]: record for record in expected}
+        actual_by_path = {record["path"]: record for record in actual}
+        missing = sorted(set(expected_by_path) - set(actual_by_path))
+        unexpected = sorted(set(actual_by_path) - set(expected_by_path))
+        changed = sorted(
+            path
+            for path in set(expected_by_path) & set(actual_by_path)
+            if expected_by_path[path] != actual_by_path[path]
+        )
+        details = []
+        if missing:
+            details.append(f"missing={missing[:3]}")
+        if unexpected:
+            details.append(f"unexpected={unexpected[:3]}")
+        if changed:
+            details.append(f"changed={changed[:3]}")
+        suffix = f": {', '.join(details)}" if details else ""
+        raise PreparationError(f"{label} inventory verification failed{suffix}")
+    return actual
+
+
+def verify_processed_outputs(
+    processed_directory: Path, splits: Any
+) -> list[Path]:
+    if not processed_directory.is_dir():
+        raise PreparationError(
+            f"processed directory does not exist: {processed_directory}"
+        )
+    if not isinstance(splits, dict):
+        raise PreparationError("manifest has no valid split records")
+
+    expected_files: dict[str, dict[str, Any]] = {}
+    for split in SPLITS:
+        split_record = splits.get(split)
+        if not isinstance(split_record, dict) or not isinstance(
+            split_record.get("files"), dict
+        ):
+            raise PreparationError(f"manifest has no valid {split} file records")
+        for filename, file_record in split_record["files"].items():
+            if (
+                not isinstance(filename, str)
+                or Path(filename).name != filename
+                or not isinstance(file_record, dict)
+                or filename in expected_files
+            ):
+                raise PreparationError(
+                    f"manifest has an invalid processed filename: {filename!r}"
+                )
+            expected_files[filename] = file_record
+
+    actual_files = sorted(
+        path
+        for path in processed_directory.iterdir()
+        if path.is_file() and path.name != "manifest.json"
+    )
+    actual_names = {path.name for path in actual_files}
+    expected_names = set(expected_files)
+    if actual_names != expected_names:
+        missing = sorted(expected_names - actual_names)
+        unexpected = sorted(actual_names - expected_names)
+        raise PreparationError(
+            "processed output set verification failed: "
+            f"missing={missing[:3]}, unexpected={unexpected[:3]}"
+        )
+
+    for path in actual_files:
+        expected = expected_files[path.name]
+        if path.stat().st_size != expected.get("bytes"):
+            raise PreparationError(f"processed output size mismatch: {path.name}")
+        if sha256_file(path) != expected.get("sha256"):
+            raise PreparationError(f"processed output hash mismatch: {path.name}")
+    return actual_files
+
+
+def verify_inputs(config: dict[str, Any], paths: dict[str, Path]) -> Path:
+    manifest_path = paths["processed"] / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise PreparationError(
+            f"processed manifest does not exist: {manifest_path}"
+        ) from error
+    except json.JSONDecodeError as error:
+        raise PreparationError(
+            f"processed manifest is invalid: {manifest_path}"
+        ) from error
+    if not isinstance(manifest, dict) or manifest.get("input_lock") != config:
+        raise PreparationError("processed manifest does not match the accepted input lock")
+
+    source_files = manifest.get("source_files")
+    if not isinstance(source_files, dict):
+        raise PreparationError("manifest has no valid source-file inventories")
+    model_files = compare_inventory("model", paths["model"], source_files.get("model"))
+    dataset_files = compare_inventory(
+        "dataset", paths["dataset"], source_files.get("dataset")
+    )
+    processed_files = verify_processed_outputs(
+        paths["processed"], manifest.get("splits")
+    )
+    print(
+        "Input verification passed: "
+        f"{len(model_files)} model files, {len(dataset_files)} dataset files, "
+        f"{len(processed_files)} processed files",
+        flush=True,
+    )
+    return manifest_path
+
+
 def preprocess_inputs(
     config: dict[str, Any],
     paths: dict[str, Path],
@@ -408,6 +541,9 @@ def main() -> int:
     try:
         config = load_config(args.config.resolve())
         paths = input_paths(config)
+        if args.verify_only:
+            verify_inputs(config, paths)
+            return 0
         if not args.preprocess_only:
             download_inputs(config, paths)
         if not args.download_only:

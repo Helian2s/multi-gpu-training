@@ -7,9 +7,12 @@ the NCP-GENL certification.
 
 | Document | Purpose | Authority |
 | --- | --- | --- |
+| [AGENTS.md](AGENTS.md) | Durable Codex working agreements, safety gates, and cross-workstation handoff rules loaded from the repository | Authoritative for agent workflow |
+| [WORKFLOW.md](WORKFLOW.md) | Human-readable startup, synchronization, workstation-role, and handoff procedure | Authoritative for cross-workstation procedure |
+| [HANDOFF.md](HANDOFF.md) | Current workstation-transition state, local-only assets, blockers, and receiving-Codex instructions | Operational snapshot; replace at the next explicit handoff |
 | [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md) | Current snapshot and history of accepted project scope, infrastructure, frameworks, workload rules, exclusions, container strategy, tools, and reproducibility requirements | Authoritative for project-wide decisions |
 | [EXPERIMENT_CATALOG.md](EXPERIMENT_CATALOG.md) | Experiment candidates, lifecycle status, hypotheses, scenarios, measurements, estimated GPU-hours, and implementation order | Authoritative for experiment definitions and status |
-| [infra/TOOLING.md](infra/TOOLING.md) | Dated operational audit of installed tools, authentication readiness, and remaining workstation/provider checks | Informational; does not change project decisions |
+| [infra/TOOLING.md](infra/TOOLING.md) | Dated per-workstation operational audit of installed tools, authentication readiness, and remaining provider checks | Informational; does not change project decisions |
 
 This README is only the repository entry point; it intentionally does not copy
 project decisions or experiment details. If the two substantive documents ever
@@ -31,6 +34,8 @@ within those constraints.
 ├── scripts/               # Local automation and experiment scaffolding
 ├── tests/                 # Tests for shared and experiment-specific code
 ├── AGENTS.md              # Durable Codex working agreements and safety gates
+├── WORKFLOW.md            # Cross-workstation startup and handoff procedure
+├── HANDOFF.md             # Current receiving-workstation instructions and state
 ├── Makefile               # Stable local entry points
 ├── requirements-preparation.txt # Pinned local input-preparation environment
 ├── EXPERIMENT_CATALOG.md  # Proposed experiments and lifecycle status

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import struct
 import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.prepare_inputs import write_tokenized_split
+from scripts.prepare_inputs import (
+    PreparationError,
+    inventory,
+    sha256_file,
+    verify_inputs,
+    write_tokenized_split,
+)
 
 
 class DummyTokenizer:
@@ -41,6 +48,66 @@ class WriteTokenizedSplitTest(unittest.TestCase):
             self.assertEqual(
                 document_hashes[32:], hashlib.sha256(b"").digest()
             )
+
+
+class VerifyInputsTest(unittest.TestCase):
+    def test_verifies_source_and_processed_hashes(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            paths = {
+                "model": root / "model",
+                "dataset": root / "dataset",
+                "processed": root / "processed",
+            }
+            for path in paths.values():
+                path.mkdir()
+            (paths["model"] / "weights.bin").write_bytes(b"model")
+            (paths["dataset"] / "train.parquet").write_bytes(b"dataset")
+
+            split_records = {}
+            for split in ("train", "validation", "test"):
+                output = paths["processed"] / f"{split}.tokens.bin"
+                output.write_bytes(split.encode("utf-8"))
+                split_records[split] = {
+                    "files": {
+                        output.name: {
+                            "bytes": output.stat().st_size,
+                            "sha256": sha256_file(output),
+                        }
+                    }
+                }
+
+            config = {
+                "schema_version": 1,
+                "status": "accepted",
+                "model": {"id": "model", "revision": "revision"},
+                "dataset": {
+                    "id": "dataset",
+                    "revision": "revision",
+                    "configuration": "configuration",
+                },
+                "preprocessing": {"version": "version"},
+            }
+            manifest = {
+                "input_lock": config,
+                "source_files": {
+                    "model": inventory(paths["model"]),
+                    "dataset": inventory(paths["dataset"]),
+                },
+                "splits": split_records,
+            }
+            (paths["processed"] / "manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+
+            self.assertEqual(
+                verify_inputs(config, paths), paths["processed"] / "manifest.json"
+            )
+            (paths["model"] / "weights.bin").write_bytes(b"changed")
+            with self.assertRaisesRegex(
+                PreparationError, "model inventory verification failed"
+            ):
+                verify_inputs(config, paths)
 
 
 if __name__ == "__main__":

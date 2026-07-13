@@ -2,13 +2,14 @@ PYTHON ?= python3
 PREPARATION_PYTHON ?= .venv/bin/python
 PREPARATION_BOOTSTRAP_PYTHON ?= python3.12
 
-.PHONY: help check new-experiment prepare-environment prepare-inputs
+.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs
 
 help:
 	@echo "make check"
 	@echo "make new-experiment ID=EXP-NN SLUG=short_slug TITLE='Experiment title'"
 	@echo "make prepare-environment"
 	@echo "make prepare-inputs"
+	@echo "make verify-inputs"
 
 check:
 	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py experiments/_template/analyze.py
@@ -30,3 +31,7 @@ prepare-environment:
 prepare-inputs:
 	test -x "$(PREPARATION_PYTHON)" || (echo "run 'make prepare-environment' first"; exit 2)
 	$(PREPARATION_PYTHON) scripts/prepare_inputs.py --config configs/inputs.lock.yaml
+
+verify-inputs:
+	test -x "$(PREPARATION_PYTHON)" || (echo "run 'make prepare-environment' first"; exit 2)
+	$(PREPARATION_PYTHON) scripts/prepare_inputs.py --config configs/inputs.lock.yaml --verify-only

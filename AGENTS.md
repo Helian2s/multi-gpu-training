@@ -3,6 +3,30 @@
 Read `README.md`, `PROJECT_DECISIONS.md`, and the relevant part of
 `EXPERIMENT_CATALOG.md` before changing project scope or experiments.
 
+## Cross-workstation continuity
+
+The Git repository is the shared project memory. Local Codex conversation
+history is not authoritative and must not be required to continue the work.
+
+- At the beginning of a session, inspect `git status -sb`, the current branch,
+  and recent commits before editing. Read `WORKFLOW.md`, `HANDOFF.md`, and the
+  matching workstation section in `infra/TOOLING.md`.
+- Identify the current OS and architecture. Never assume that tools,
+  credentials, caches, downloaded inputs, Docker images, or authentication from
+  another workstation are available locally.
+- Preserve unrelated or uncommitted work. Do not pull into a dirty worktree or
+  switch branches in a way that could overwrite local changes.
+- Treat only committed files as cross-workstation handoff state. Record durable
+  decisions in `PROJECT_DECISIONS.md`, experiment state in
+  `EXPERIMENT_CATALOG.md`, and machine-specific readiness in
+  `infra/TOOLING.md`.
+- Before handing work to another workstation, run `make check`, inspect the
+  diff for secrets or large artifacts, update any affected status document,
+  and clearly report uncommitted work. Commit and push only when the user asks.
+- Prefer sequential work on one shared branch. If two workstations will edit
+  concurrently, use separate task branches and reconcile them through Git
+  rather than copying working directories.
+
 - Keep `PROJECT_DECISIONS.md` as both the current authoritative snapshot and an
   append-only decision history. When a user-approved project-wide decision
   changes, update the snapshot and append a dated `PD-NNN` entry that states

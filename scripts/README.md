@@ -10,7 +10,9 @@ Currently available:
   template.
 - `prepare_inputs.py`: download the accepted immutable Qwen3 and WikiText
   snapshots, then create canonical per-split token streams, document indexes,
-  hashes, and a reproducibility manifest.
+  hashes, and a reproducibility manifest. Its `--verify-only` mode hashes the
+  complete downloaded and processed asset set against that manifest without
+  downloading or preprocessing it again.
 - `validate_repo.py`: validate YAML syntax, local Markdown links, continuous and
   matching catalog IDs/titles, shared-workload row/status structure,
   AWS-then-Runpod ordering, single-provider placement, and compute-profile

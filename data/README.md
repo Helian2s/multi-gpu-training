@@ -29,3 +29,9 @@ non-empty records receive one EOS. Processed output contains little-endian
 `uint32` token streams, `uint64` document offsets, per-document SHA-256 values,
 and a manifest with source/output checksums. Model, dataset, and generated files
 are intentionally not committed.
+
+After transferring `raw/` and `processed/` to another workstation, recreate the
+local environment with `make prepare-environment` and run `make verify-inputs`.
+Verification reads every transferred source and output file and compares its
+size and SHA-256 value with the generated manifest; it performs no download or
+preprocessing.

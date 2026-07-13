@@ -2,11 +2,17 @@
 
 Last checked: 2026-07-13
 
-This is an operational status record, not a project-decision log. The approved
-toolset is maintained in `PROJECT_DECISIONS.md`; this file answers whether the
-current workstation can actually use it.
+This is a per-workstation operational status record, not a project-decision
+log. The approved toolset is maintained in `PROJECT_DECISIONS.md`; this file
+answers whether each workstation can actually use it. A successful check on one
+machine does not establish readiness on another machine. Never record a secret
+value here.
 
-## Current workstation
+## macOS ARM64 workstation
+
+Role: documentation, source changes, input preparation, analysis, and
+lightweight cross-platform container work. Large `linux/amd64` NVIDIA image
+builds should normally move to the Ubuntu workstation.
 
 | Capability | Tool/status | Readiness |
 | --- | --- | --- |
@@ -20,22 +26,44 @@ current workstation can actually use it.
 | Local entry points and analysis | GNU Make 3.81 and Python 3.14.3; isolated input preparation uses Python 3.12.5 | Ready for the current scaffold; container Python remains separately pinned |
 | Local model and dataset inputs | Pinned Qwen3 model/tokenizer and WikiText-103 snapshots plus canonical token streams and checksums | Ready locally; durable S3 and Runpod copies are still pending |
 
+## Ubuntu x86_64 workstation
+
+Role: preferred local machine for native `linux/amd64` container pulls and
+builds and other CPU/RAM/disk-intensive preparation.
+
+Status: **not yet audited**. The first session on this workstation must replace
+the unknown entries with observed facts; it must not copy readiness from macOS.
+
+| Capability | Tool/status | Readiness |
+| --- | --- | --- |
+| OS, CPU, RAM, and storage | Exact Ubuntu release, Intel CPU, RAM, and free disk are not recorded | Pending local audit |
+| Git repository work | Version and authentication are not recorded | Pending local audit |
+| Native OCI image build | Docker Engine, Buildx, BuildKit, and `linux/amd64` behavior are not recorded | Pending local audit |
+| NVIDIA GPU runtime | Local GPU and NVIDIA Container Toolkit availability are not known | Pending local audit; cloud GPU validation remains mandatory |
+| NVIDIA NGC access | Registry authentication and base-image pulls are not tested | Pending only when image work is approved |
+| AWS API and ECR | AWS CLI, identity, Region, IAM, S3, and ECR access are not recorded | Pending local audit |
+| GitHub and GHCR | GitHub CLI and package read/write access are not recorded | Pending local audit |
+| Runpod | CLI and API connectivity are not recorded | Optional until a Runpod lifecycle task is assigned here |
+| Local model and dataset inputs | Local snapshots and canonical token streams are not recorded | Reproduce or transfer with manifest verification when needed |
+
 ## Required next checks
 
-1. Install AWS CLI v2 and select a short-lived authentication method. Verify
+1. Audit the Ubuntu x86_64 workstation according to `WORKFLOW.md` and fill its
+   readiness table without recording credentials.
+2. Install AWS CLI v2 and select a short-lived authentication method. Verify
    the caller identity and default Region without writing credentials to this
    repository.
-2. Build the first pinned project image for `linux/amd64` and verify its content
+3. Build the first pinned project image for `linux/amd64` and verify its content
    locally before publishing it.
-3. Create the two private ECR repositories in `us-west-2`, an EC2 pull-only
+4. Create the two private ECR repositories in `us-west-2`, an EC2 pull-only
    role, and a GitHub Actions OIDC publishing role before the first image push.
-4. Configure and verify GHCR package permissions for the mirror. Runpod receives
+5. Configure and verify GHCR package permissions for the mirror. Runpod receives
    pull-only credentials; AWS credentials are never stored in Runpod.
-5. Verify access to the selected NGC PyTorch and NeMo base images during the
+6. Verify access to the selected NGC PyTorch and NeMo base images during the
    container compatibility build.
-6. Upload the pinned input snapshots and generated manifest to versioned S3 and
+7. Upload the pinned input snapshots and generated manifest to versioned S3 and
    Runpod network-volume paths, then verify their checksums.
-7. On the first host from each compute profile, run qualification for the
+8. On the first host from each compute profile, run qualification for the
    NVIDIA driver, container runtime, CUDA, NCCL, DCGM, Nsight Systems, Nsight
    Compute, storage, image pull, topology, and termination guard. These tools
    cannot be validated on the non-NVIDIA local workstation.
