@@ -1,0 +1,65 @@
+schema_version: 1
+
+experiment:
+  id: EXP-XX
+  slug: experiment_slug
+  title: Experiment title
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: null # pytorch or nemo
+  image: null # Required immutable provider-registry reference with digest (ECR on AWS, GHCR on Runpod).
+
+hardware:
+  compute_profile: null # Accepted profile from EXPERIMENT_CATALOG.md.
+  provider: null # aws or runpod
+  location: null # AWS Region or Runpod datacenter.
+  resource_type: null # EC2 instance type or Runpod Pod/GPU offer.
+  purchase_option: null
+  gpu_type: null
+  gpu_architecture: null
+  gpu_memory_gib: null
+  physical_gpu_count: null
+  visible_gpu_count: null
+  visible_devices: []
+  single_node: true
+
+qualification:
+  required: true
+  command: null # Shared qualification command once implemented.
+
+workload:
+  shared_config: null # Point to ../../configs/workload.yaml after acceptance.
+  profile: null # smoke, correctness, benchmark, or resume
+  overrides: {}
+
+sweep:
+  baseline: null
+  variants: []
+  fixed: {}
+
+execution:
+  launcher: null
+  environment: {}
+  timeout_seconds: null
+
+measurements:
+  required: []
+  profilers: []
+  repetitions: 3
+
+correctness:
+  gates: []
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: null
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: null
+  maximum_instance_hours: null
+  maximum_provider_cost: null
+  stop_conditions: []

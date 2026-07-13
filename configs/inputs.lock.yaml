@@ -1,0 +1,22 @@
+schema_version: 1
+status: accepted
+
+model:
+  id: Qwen/Qwen3-1.7B-Base
+  revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+  tokenizer_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+
+dataset:
+  id: Salesforce/wikitext
+  configuration: wikitext-103-raw-v1
+  revision: b08601e04326c79dfdd32d625aee71d232d685c3
+
+preprocessing:
+  version: qwen3-wikitext-v1
+  text_field: text
+  add_special_tokens: false
+  append_eos_per_nonempty_record: true
+  preserve_empty_records: true
+  token_dtype: uint32_le
+  document_offset_dtype: uint64_le
+  document_hash: sha256_of_token_bytes_including_eos_for_nonempty_records

@@ -195,9 +195,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#   and can be added to the global gitignore or merged into this file. However, if you prefer,
 #   you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 # Temporary file for partial code execution
@@ -216,3 +216,65 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Workstation-local metadata
+.DS_Store
+.idea/
+
+# Local credentials and provider/registry state
+/.aws/
+/.docker/
+/.ngc/
+/.runpod/
+/.config/gh/
+.env.*
+!.env.example
+configs/*.local.yaml
+configs/*.resolved.yaml
+
+# Downloaded and generated training data
+data/downloads/
+data/raw/
+data/processed/
+data/cache/
+
+# Downloaded model caches and generated checkpoints
+/.huggingface/
+/model-cache/
+/models/
+/checkpoints/
+/converted-checkpoints/
+/exports/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.nemo
+pytorch_model*.bin
+
+# Framework and compiler caches
+/.nv/
+/.torch/
+/.torch_extensions/
+/torch_compile_debug/
+/triton_cache/
+/wandb/
+/lightning_logs/
+/nemo_experiments/
+/results/
+
+# Experiment outputs and large profiler artifacts
+artifacts/**
+!artifacts/README.md
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+events.out.tfevents.*
+core
+core.*
+
+# Local container build exports
+/.buildx/
+*.dockerbuild
+*.docker.tar
+*.oci.tar

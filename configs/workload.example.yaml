@@ -1,0 +1,40 @@
+schema_version: 1
+status: proposed
+source: ../EXPERIMENT_CATALOG.md
+
+model:
+  id: Qwen/Qwen3-1.7B-Base
+  revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+  tokenizer_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+
+dataset:
+  id: Salesforce/wikitext
+  configuration: wikitext-103-raw-v1
+  revision: b08601e04326c79dfdd32d625aee71d232d685c3
+  preprocessing_version: qwen3-wikitext-v1
+
+training:
+  type: full_parameter_continued_pretraining
+  objective: causal_next_token_cross_entropy
+  default_precision: bf16
+  sequence_length: null
+  microbatch_size: null
+  gradient_accumulation_steps: null
+  effective_global_batch_size: null
+  optimizer: null
+
+evaluation:
+  purpose: correctness_guardrail
+  validation_slice_id: null
+  downstream_benchmarks: false
+
+profiles:
+  smoke:
+    optimizer_steps: 3
+  correctness:
+    optimizer_steps: 5
+  benchmark:
+    warmup_steps: 20
+    measured_steps: 100
+  resume:
+    post_resume_steps: 3
