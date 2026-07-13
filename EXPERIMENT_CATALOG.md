@@ -1,13 +1,13 @@
 # Proposed experiment catalog
 
-Status: Proposed experiments and selection worksheet
-Last updated: 2026-07-11
+Document status: Planning worksheet; all numbered experiments are proposed
+Last updated: 2026-07-13
 Governing decisions: [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md)
 
 ## Document role and authority
 
-This file owns experiment IDs, definitions, recommendations, selection status,
-hypotheses, measurements, estimated GPU-hours, and implementation order. It may
+This file owns experiment IDs, definitions, lifecycle status, hypotheses,
+measurements, estimated GPU-hours, and implementation order. It may
 also contain proposed project-wide choices, such as a model or dataset, while
 those choices are under review.
 
@@ -24,33 +24,34 @@ implement. It translates the Ultra-Scale Playbook and the GPU Acceleration and
 Optimization portion of NCP-GENL into experiments that fit the governing
 project decisions.
 
-The recommendations below are proposals, not accepted decisions. Change the
-`Decision` column to `accept`, `defer`, or `reject` during review. Accepted
-experiments will later receive their own directory and detailed design.
+The numbered rows begin with `Status=proposed`. Change an experiment to
+`accepted` or `deferred` during review; use `completed` only after its report is
+finished. Only accepted experiments receive an implementation directory.
+Canonical IDs `EXP-01` through `EXP-14` also define the recommended high-level
+execution order: finish the AWS phase before starting the grouped Runpod phase.
 
 ## Proposed shared workload contract
 
-These decisions must be accepted before individual experiments are designed.
-The recommendation is to use one exact dense model and one existing dataset for
-all comparable training experiments. Changing either is allowed only when the
-experiment's hypothesis makes it unavoidable.
+Proposed rows must be resolved before a model-dependent experiment is accepted.
+The model-free EXP-01 and EXP-10 communication experiments do not depend on this
+contract. The current proposal uses one exact dense model and one existing
+dataset for all comparable training experiments. Changing either is allowed
+only when the experiment's hypothesis makes it unavoidable.
 
-| Decision area | Proposed choice | Status |
+| Decision area | Choice | Status |
 | --- | --- | --- |
-| Primary model | `Qwen/Qwen3-1.7B-Base` | TBD |
-| Number of dense models | One exact model/checkpoint for all dense experiments | TBD |
-| Initialization | Start every comparable variant from the same pretrained base checkpoint | TBD |
-| Training type | Full-parameter continued pretraining, not SFT, LoRA, or training from scratch | accepted |
-| Training objective | Autoregressive causal language modeling with next-token cross-entropy | accepted |
-| Dataset | `Salesforce/wikitext`, configuration `wikitext-103-raw-v1` | TBD |
-| Tokenizer | Tokenizer shipped with `Qwen/Qwen3-1.7B-Base` | TBD |
-| Data preparation | Tokenize and pack once; no project-specific cleaning, curation, or deduplication | TBD |
-| Evaluation scope | Correctness and short loss/perplexity sanity checks only | TBD |
-| Model-quality benchmarks | Exclude downstream benchmark suites and training-to-convergence | TBD |
+| Dense workload model | One exact dense base model for all model-dependent experiments; proposed model: `Qwen/Qwen3-1.7B-Base` | proposed |
+| Comparable initialization | Restore every comparable variant from the same pinned pretrained checkpoint, batches, and seeds | accepted |
+| Training task and objective | Full-parameter continued pretraining with autoregressive next-token cross-entropy; exclude SFT, LoRA, and training from scratch | accepted |
+| Benchmark purpose and output | Exercise the complete training path for short infrastructure measurements, not convergence; discard resulting weights except for the optional restart extension | accepted |
+| Dataset, tokenizer, and preparation | Use `Salesforce/wikitext` `wikitext-103-raw-v1`, the model tokenizer, and one deterministic packed token stream without custom cleaning or curation | proposed |
+| Revision and sample identity | Pin model, tokenizer, dataset, and preprocessing revisions and preserve sample hashes before comparable runs | accepted |
+| Default benchmark precision | Use BF16 except when precision is the independent variable in EXP-02 or a compatibility requirement dictates otherwise | proposed |
+| Evaluation boundary | Use correctness gates and short loss/perplexity sanity checks; exclude downstream model-quality suites and training-to-convergence claims | proposed |
 
 Rows marked `accepted` summarize workload rules already governed by
 [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md); they are repeated here only to
-make the proposed workload readable. Rows marked `TBD` remain proposals and do
+make the proposed workload readable. Rows marked `proposed` remain proposals and do
 not become project decisions until they are promoted to that file.
 
 ### Why this model
@@ -59,8 +60,8 @@ not become project decisions until they are promoted to that file.
 
 - A decoder-only causal language model suitable for the selected training
   objective.
-- Small enough for full training steps on one A100 SXM, making one-GPU baselines
-  possible.
+- Small enough for full training steps on one qualified 48-96 GB primary GPU,
+  making one-GPU baselines possible.
 - Large enough to produce meaningful compute, memory, and communication traces
   on two and four GPUs.
 - Structurally suitable for the proposed parallel degrees: 28 transformer
@@ -70,9 +71,10 @@ not become project decisions until they are promoted to that file.
 - Supported by NVIDIA Megatron Bridge through an existing Qwen3 1.7B pretraining
   recipe, avoiding a new NeMo/Megatron model implementation.
 
-The project uses the base model, not the instruction/chat-tuned model. The
-pretrained checkpoint is restored before each comparable variant so that
-precision or parallelism changes are measured from identical weights.
+The proposed workload uses the base model, not the instruction/chat-tuned
+model. The pretrained checkpoint would be restored before each comparable
+variant so that precision or parallelism changes are measured from identical
+weights.
 
 For native PyTorch experiments, Hugging Face Transformers may supply the Qwen3
 model definition and checkpoint loader, but the training loop, optimizer, and
@@ -89,40 +91,41 @@ validation.
 
 | Component or experiment feature | Compatibility assessment | Required action |
 | --- | --- | --- |
-| Docker/OCI, GHCR, Runpod, Git, SSH, and storage tooling | Model-agnostic | Verify image pull, artifact paths, and available disk space |
+| Docker/OCI, Amazon ECR, GHCR, AWS, Runpod, Git, SSH, and storage tooling | Model-agnostic | Verify both image pulls, provider metadata, artifact paths, staging, and available disk space |
 | Hugging Face model, tokenizer, and Safetensors | Officially supported; Qwen3 requires Transformers 4.51 or newer | Pin the exact model revision and a compatible Transformers version |
 | Hugging Face Datasets/Hub and WikiText-103 | Model-agnostic download/preprocessing path | Pin dataset revision and preserve license/attribution metadata |
 | Native PyTorch forward/backward and AdamW | Official model implementation is a PyTorch `nn.Module` | Compare a fixed-batch loss and update with the published checkpoint |
 | PyTorch DDP and NCCL | Model-agnostic distributed wrappers/collectives | Two-GPU correctness smoke test |
-| BF16, FP16, FP32, and TF32 on A100 | Compatible with native PyTorch; BF16 is the default | Validate numerical tolerances and Tensor Core use in EXP-001 |
+| BF16, FP16, FP32, and TF32 | Compatible on the candidate NVIDIA GPUs; BF16 is the proposed default | Validate numerical tolerances and Tensor Core use in EXP-02 |
+| FP8 and Blackwell lower-precision formats | Transformer Engine standard FP8 supports Ada and later, including the G7e GPU's SM 12.0 capability; current MXFP8/NVFP4 training documentation lists SM 10.0/10.3 rather than SM 12.0 | Qualify standard FP8 on the pinned G7e stack; exclude MXFP8/NVFP4 from the current plan and never relabel emulation or fallback as native execution |
 | PyTorch activation checkpointing | Generic compatibility | Check Qwen block wrapping and loss agreement |
-| PyTorch FSDP2 | Expected generic compatibility, but no Qwen3-specific FSDP2 recipe was found | Validate wrapping, tied/shared parameters, state dict, and resume before EXP-010 |
+| PyTorch FSDP2 | Expected generic compatibility, but no Qwen3-specific FSDP2 recipe was found | Validate wrapping, tied/shared parameters, state dict, and resume before EXP-08 |
 | PyTorch SDPA/Flash Attention backends | Qwen3 uses GQA; optimized backends are available but backend selection is shape/version dependent | Log the selected kernel/backend and retain a math-backend correctness baseline |
-| `torch.compile`/Inductor | Transformers supports compiled training generally; no Qwen3 full-training guarantee was found | Treat compilation as an EXP-004 hypothesis and record graph breaks/fallbacks rather than assuming success |
+| `torch.compile`/Inductor | Transformers supports compiled training generally; no Qwen3 full-training guarantee was found | Treat compilation as a secondary EXP-05 variant and record graph breaks/fallbacks rather than assuming success |
 | PyTorch Profiler and TensorBoard | Model-agnostic | Smoke test trace export |
-| Nsight Systems, Nsight Compute, NVTX, DCGM, and `nvidia-smi` | Model-agnostic; low-level counters depend on Runpod permissions | Check permissions in the mandatory pre-run qualification |
+| Nsight Systems, Nsight Compute, NVTX, DCGM, and `nvidia-smi` | Model-agnostic; low-level counters depend on provider and host permissions | Check permissions in the mandatory pre-run qualification |
 | CUDA, cuBLAS/cuBLASLt, cuDNN, NCCL, `nccl-tests`, and CUDA Samples | Model-agnostic; used directly or beneath PyTorch/Transformer Engine | Pin via the NGC image and run topology/collective smoke tests |
 | NeMo Framework, Megatron Core, and Megatron Bridge | Official Qwen3 support, Qwen3-1.7B pretraining recipe, and HF/Megatron conversion | Pin the NeMo container and perform one round-trip logit/checkpoint comparison |
-| Transformer Engine and optimized/fused attention | Megatron Bridge exposes TE attention backends and Qwen3 maps to Megatron model modules | Smoke test the selected A100 backend and log fallbacks |
+| Transformer Engine and optimized/fused attention | Megatron Bridge exposes TE attention backends and Qwen3 maps to Megatron model modules | Smoke test the selected GPU backend and log fallbacks |
 | NVIDIA Apex | Not required by Qwen itself; use only if bundled and required by the pinned NVIDIA stack | Do not add a separate Apex dependency without a demonstrated need |
-| TP=2/4 and sequence parallelism | Framework-supported and Qwen dimensions are divisible; the official 1.7B recipe recommends TP=1 for efficiency | Validate TP=2/4 correctness; treat poor performance as a valid result |
-| PP=2/4 | Framework-supported; 28 layers are divisible by 2 and 4 | Validate stage assignment, embedding/loss placement, and balance |
-| CP=2/4 | Framework-supported; use sequence lengths divisible by CP and no more than the model's 32K context | Validate CP attention backend and fixed-token loss agreement |
-| TP=2 x DP=2, TP=2 x CP=2, and TP=2 x PP=2 x DP=2 | Megatron Bridge supports combined process groups and the dimensions are structurally valid | Each hybrid needs a short rank-map and correctness smoke test before profiling |
+| TP=2 and sequence parallelism | Framework-supported and Qwen dimensions are divisible; the official 1.7B recipe recommends TP=1 for efficiency | Validate TP=2 correctness; treat poor performance as a valid result |
+| PP=2 | Framework-supported; 28 layers are divisible by 2 | Validate stage assignment, embedding/loss placement, and balance |
+| CP=2 | Framework-supported; use sequence lengths divisible by 2 and no more than the model's 32K context | Validate CP attention backend and fixed-token loss agreement |
+| TP=2 x DP=2 | Megatron Bridge supports the combined process groups and the dimensions are structurally valid | Run a rank-map and correctness smoke test before profiling |
 | Distributed checkpoints | PyTorch and Megatron Bridge support their respective formats | Do not assume arbitrary TP/PP reshaping; test only the layout changes explicitly supported |
 | WikiText token stream | Model-independent once tokenized with the pinned Qwen tokenizer | Generate once and verify identical sample hashes in PyTorch and Megatron loaders |
 | NumPy, pandas, SciPy, Matplotlib, Seaborn, PyYAML, pytest, Ruff, and `psutil` | Operate on configurations, tests, telemetry, or saved metrics; model-agnostic | Pin versions and validate the analysis pipeline locally |
 
 The verdict is therefore **suitable with targeted smoke tests**, not
-"automatically supported by every possible combination." The container build is
-not accepted until a compatibility job passes the required actions above on an
-A100 Pod.
+"automatically supported by every possible combination." The workload/image
+combination is not considered compatible until a job passes the required
+actions above on a qualified NVIDIA compute host.
 
 ### One model versus multiple models
 
-The default is **one exact dense model**, not a collection of convenient models.
-This keeps tokens/second, memory, numerical behavior, and loss comparisons
-interpretable across DDP, FSDP, TP, PP, CP, and hybrid layouts.
+The proposed default is **one exact dense model**, not a collection of convenient
+models. This keeps tokens/second, memory, numerical behavior, and loss
+comparisons interpretable across DDP, FSDP, TP, PP, CP, and hybrid layouts.
 
 No other experiment may silently change model size, layer count, vocabulary,
 attention type, or checkpoint. If the primary model proves technically
@@ -158,17 +161,18 @@ microbenchmarks and fault injection, but they cannot replace WikiText in an
 end-to-end training comparison.
 
 If the shared workload contract is accepted, every end-to-end training
-experiment uses WikiText-103 and the pinned Qwen tokenizer. EXP-007/EXP-008 do
-not train a model, and isolated kernel/collective sub-benchmarks may use
+experiment uses WikiText-103 and the pinned Qwen tokenizer. EXP-01 and EXP-10
+do not train a model, and isolated kernel/collective sub-benchmarks may use
 synthetic tensors.
 
 ### Training type and objective
 
-The shared training workload is **full-parameter continued pretraining** from
-the Qwen3 base checkpoint. Every trainable parameter participates in forward,
-backward, gradient synchronization/sharding, optimizer state, and checkpointing.
-This exercises the complete distributed-training path without the cost of
-pretraining a useful model from random initialization.
+The accepted training task is **full-parameter continued pretraining**. Under
+the proposed workload, it starts from the Qwen3 base checkpoint. Every trainable
+parameter participates in forward, backward, gradient synchronization/sharding,
+optimizer state, and checkpointing. This exercises the complete
+distributed-training path without the cost of pretraining a useful model from
+random initialization.
 
 The objective is standard next-token prediction:
 
@@ -184,8 +188,8 @@ not necessary for the infrastructure questions in this catalog.
 
 Unless the experiment studies one of these variables, optimizer, learning rate,
 weight decay, precision, sequence length, and effective global batch remain
-fixed in a shared workload configuration. BF16 is the proposed default
-precision on A100; EXP-001 is the explicit exception.
+fixed in a shared workload configuration. BF16 is the proposed portable default
+precision; EXP-02 is the explicit hardware-capability sweep.
 
 ### Expected effect of continued pretraining
 
@@ -198,10 +202,10 @@ benchmark windows are intentionally short.
 
 For this project, the updated model is not the product. Each comparison starts
 again from the identical base checkpoint, and resulting weights are discarded
-after metrics are collected except when a checkpoint/restart experiment needs
-them. We care that the loss and updates are valid and equivalent across
-configurations—not that the short run improves general knowledge or downstream
-answers.
+after metrics are collected except when the optional checkpoint/restart
+extension needs them. We care that the loss and updates are valid and
+equivalent across configurations—not that the short run improves general
+knowledge or downstream answers.
 
 Longer continued pretraining could overfit WikiText or shift performance away
 from other domains (catastrophic forgetting). Studying those effects would
@@ -218,18 +222,19 @@ duration each time:
 | Smoke | Detect configuration, launch, and immediate OOM failures | 3 complete optimizer steps |
 | Correctness | Compare loss/gradients/updates from a fixed checkpoint and fixed batches | 5 deterministic optimizer steps |
 | Benchmark | Measure steady-state performance | 20 warm-up + 100 measured steps, repeated when variance requires |
-| Resume | Validate checkpoint continuation | Save, reload, and compare at least the next 3 steps |
+| Resume, if the optional extension is selected | Validate checkpoint continuation | Save, reload, and compare at least the next 3 steps |
 
 These are measurement windows, not attempts to train the model to convergence.
 An experiment may shorten a profile when profiler overhead is extreme, but must
 justify the change and still collect enough iterations for a stable conclusion.
 
-### Evaluation policy
+### Proposed evaluation policy
 
-The project remains infrastructure-focused, but evaluation cannot be removed
-entirely: a faster run is meaningless if it computes a different update.
+The proposed boundary remains infrastructure-focused, but it retains enough
+evaluation to show that a faster run did not compute a materially different
+update.
 
-Required evaluation is limited to:
+If accepted, required evaluation is limited to:
 
 - Finite loss and gradients.
 - Initial loss/logit agreement for implementations expected to be equivalent.
@@ -238,7 +243,8 @@ Required evaluation is limited to:
 - Training loss during the measured run.
 - Validation cross-entropy and perplexity on a small fixed WikiText validation
   slice before and after experiments that perform optimizer updates.
-- Exact or tolerance-based post-resume agreement for checkpoint experiments.
+- Exact or tolerance-based post-resume agreement when the checkpoint extension
+  is implemented.
 
 Not required:
 
@@ -266,68 +272,85 @@ to the approved toolset:
 These libraries do not authorize Hugging Face Trainer, Accelerate, or another
 distributed-training framework.
 
-## Selection vocabulary
+## Proposed experiment summary
 
-- **Core:** recommended for the main curriculum. Removing it leaves a material
-  gap in GPU optimization, profiling, distributed training, or parallelism.
-- **Optional:** useful, but overlaps another experiment, has a narrower use
-  case, or has a relatively high implementation/cost burden.
-- **GPU-hours:** an initial target for the final measured run, after code is
-  working. It excludes image pulls, development, debugging, and failed runs.
+### Planned compute profiles
 
-## Proposed selection summary
+These are accepted placements, not evidence that capacity is available. Every
+session must still pass the mandatory qualification and cost gate.
 
-| ID | Experiment | Tags | Stack | GPUs | Target GPU-hours | Recommendation | Decision |
-| --- | --- | --- | --- | ---: | ---: | --- | --- |
-| EXP-001 | Mixed precision and Tensor Cores in distributed training | `precision` `tensor-cores` `ddp` | PyTorch | 1, 2 | 1.0-2.0 | Core | TBD |
-| EXP-002 | Microbatch, global batch, and gradient accumulation | `batching` `memory` `ddp` | PyTorch | 1, 2 | 1.0-2.0 | Core | TBD |
-| EXP-003 | Activation checkpointing/recomputation | `memory` `recompute` | PyTorch | 1 | 0.5-1.0 | Core | TBD |
-| EXP-004 | PyTorch SDPA/FlashAttention, fusion, and `torch.compile` | `kernels` `attention` `flash-attention` `compile` | PyTorch | 1 | 0.75-1.5 | Core | TBD |
-| EXP-005 | Profiler triangulation | `profiling` `nsys` `ncu` | PyTorch/NVIDIA tools | 1 | 0.75-1.5 | Core | TBD |
-| EXP-006 | Input-pipeline starvation | `data-pipeline` `cpu` `ddp` | PyTorch | 1, 4 | 1.0-2.5 | Optional | TBD |
-| EXP-007 | GPU topology and peer-to-peer paths | `topology` `p2p` `nvlink` | NVIDIA tools | 2, 4 | 1.0-2.0 | Core | TBD |
-| EXP-008 | NCCL collective benchmark | `nccl` `collectives` `topology` | NCCL/NVIDIA tools | 2, 4 | 2.0-4.0 | Core | TBD |
-| EXP-009 | DDP scaling and communication overlap | `ddp` `scaling` `overlap` | PyTorch | 1, 2, 4 | 3.0-6.0 | Core | TBD |
-| EXP-010 | FSDP sharding and ZeRO-style memory trade-offs | `fsdp` `sharding` `memory` | PyTorch | 2, 4 | 2.0-4.0 | Core | TBD |
-| EXP-011 | Tensor plus sequence parallelism | `megatron` `tp` `sp` | NeMo/Megatron | 1, 2, 4 | 2.0-4.0 | Core | TBD |
-| EXP-012 | Pipeline schedules and bubble size | `megatron` `pp` `scheduling` | NeMo/Megatron | 2, 4 | 2.0-4.0 | Core | TBD |
-| EXP-013 | Context parallelism for long sequences | `megatron` `cp` `long-context` | NeMo/Megatron | 1, 2, 4 | 2.0-4.0 | Core | TBD |
-| EXP-014 | TP=2 x DP=2 for model width and throughput | `megatron` `hybrid` `tp` `dp` | NeMo/Megatron | 4 | 2.0-3.0 | Core | TBD |
-| EXP-015 | TP=2 x CP=2 for model width and long context | `megatron` `hybrid` `tp` `cp` | NeMo/Megatron | 4 | 2.0-3.0 | Optional | TBD |
-| EXP-016 | Distributed checkpoint and restart | `checkpointing` `recovery` `sharding` | PyTorch and NeMo/Megatron | 2, 4 | 2.0-4.0 | Core | TBD |
-| EXP-017 | Controlled troubleshooting and failure diagnosis | `troubleshooting` `nccl` `oom` | PyTorch | 2 | 1.0-2.0 | Core | TBD |
-| EXP-018 | End-to-end configuration-selection capstone | `capstone` `cost` `comparison` | Both, separate runs | 1, 2, 4 | 3.0-6.0 | Core | TBD |
+| Profile | Provider resource | Physical GPUs | Normal visible GPUs | Purpose |
+| --- | --- | ---: | ---: | --- |
+| `AWS-G7E-1` | AWS `us-west-2`, On-Demand `g7e.2xlarge` | 1 x RTX PRO 6000 Blackwell Server Edition 96 GB | 1 | One-GPU correctness, kernel, memory, and scaling baseline |
+| `AWS-G7E-2` | AWS `us-west-2`, On-Demand `g7e.12xlarge` | 2 x RTX PRO 6000 Blackwell Server Edition 96 GB | 2 | Two-rank distributed runs |
+| `AWS-G7E-4` | AWS `us-west-2`, On-Demand `g7e.24xlarge` | 4 x RTX PRO 6000 Blackwell Server Edition 96 GB | 4 | EXP-07 four-rank DDP sub-run; consumes all 96 approved vCPUs |
+| `RUNPOD-A100-SXM2` | Runpod Secure Cloud Pod, 2 x `NVIDIA A100-SXM4-80GB` | 2 x A100 80 GB SXM | 1 or 2 by visibility mask | Two-GPU NVLink measurements and all one-/two-rank NeMo/Megatron work |
+| `RUNPOD-A100-SXM4` | Runpod Secure Cloud Pod, 4 x `NVIDIA A100-SXM4-80GB` | 4 x A100 80 GB SXM | 4 | The single four-rank hybrid TP=2 x DP=2 experiment |
 
-If all 16 core experiments are accepted, their row estimates sum to 26-51
-measured GPU-hours. Including both optional experiments gives 29-56.5 measured
-GPU-hours. First-time debugging and profiler setup can make the billable total
-materially higher.
+Runpod does not expose an EC2-style standardized instance type. The cloud class,
+exact GPU type ID, GPU count, datacenter, Pod ID, and observed topology together
+identify the resource. A Runpod profile is admissible only when qualification
+shows the intended GPUs on one physical host and NVLink between every selected
+pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 
-## Tag index
+| ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
+| --- | --- | --- | ---: | --- | ---: | --- |
+| EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-G7E-2` | 1.5-3.0 | proposed |
+| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-G7E-1/2` | 1.0-2.0 | proposed |
+| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1, 2 | AWS `AWS-G7E-1/2` | 1.0-2.0 | proposed |
+| EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-G7E-1` | 0.5-1.0 | proposed |
+| EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
+| EXP-06 | Profiler triangulation | PyTorch/NVIDIA tools | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
+| EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2, 4 | AWS `AWS-G7E-1/2/4` | 4.0-8.0 | proposed |
+| EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-G7E-2` | 1.0-2.0 | proposed |
+| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-G7E-1/2` | 1.5-3.0 | proposed |
+| EXP-10 | Runpod NVLink P2P and NCCL communication | NCCL/NVIDIA tools | 2 | Runpod `RUNPOD-A100-SXM2` | 1.5-3.0 | proposed |
+| EXP-11 | Tensor plus sequence parallelism | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 2.0-4.0 | proposed |
+| EXP-12 | Pipeline schedules and bubble size | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
+| EXP-13 | Context parallelism for long sequences | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
+| EXP-14 | TP=2 x DP=2 for model width and throughput | NeMo/Megatron | 4 | Runpod `RUNPOD-A100-SXM4` | 2.0-3.0 | proposed |
 
-- Foundations: `precision` (EXP-001), `batching` (EXP-002), `memory`
-  (EXP-002, EXP-003, EXP-010), `kernels`/`flash-attention` (EXP-004),
-  `profiling` (EXP-005), and
-  `data-pipeline` (EXP-006).
-- Communication: `topology` (EXP-007, EXP-008), `p2p` (EXP-007), `nccl`
-  (EXP-008, EXP-017), and `collectives` (EXP-008).
-- PyTorch distributed: `ddp` (EXP-001, EXP-002, EXP-006, EXP-009), `fsdp`
-  (EXP-010), and `sharding` (EXP-010, EXP-016).
-- NeMo/Megatron parallelism: `tp` (EXP-011, EXP-014, EXP-015), `sp`
-  (EXP-011), `pp` (EXP-012), and `cp` (EXP-013, EXP-015).
-- Integration: `hybrid` (EXP-014, EXP-015), `checkpointing` (EXP-016),
-  `troubleshooting` (EXP-017), and `capstone` (EXP-018).
+The 14 core row estimates sum to 19.5-38 measured GPU-hours. The optional
+distributed-checkpoint extension described later is outside this total.
+First-time debugging and profiler setup can make the billable total materially
+higher.
+
+These are **active experiment GPU-hours**, not necessarily provider-billed
+accelerator hours. Cost uses the complete EC2 instance or Runpod Pod. G7e offers
+exact one-, two-, and four-GPU sizes; another family may require paying for
+masked GPUs.
+
+Each numbered experiment has exactly one provider. A scale experiment may use
+sequential instance sizes from that provider, but every sub-run still uses one
+physical host and records its own profile. Cross-provider relationships are
+comparisons between separately numbered experiments, never additional rows
+hidden inside one experiment.
+
+### Four-GPU admission gate
+
+Four GPUs are admitted only where two GPUs cannot test the hypothesis:
+
+- EXP-07 needs 1, 2, and 4 ranks to observe a second scaling step and identify
+  non-linear DDP efficiency loss; a single 1-to-2 comparison cannot establish a
+  scaling trend.
+- EXP-14 needs four ranks because non-trivial TP and DP groups of size two
+  require `2 x 2 = 4` ranks.
+
+No other catalog experiment has a four-GPU run. Adding one requires an explicit
+hypothesis that cannot be answered with one or two GPUs and a project-decision
+update.
 
 ## Mandatory pre-run qualification
 
 Environment and topology qualification is a prerequisite check, not an
-experiment. A shared script must run at the start of every Pod session and its
-output must be attached to every experiment executed in that session.
+experiment. A shared script must run at the start of every compute session and
+its output must be attached to every experiment executed in that session.
 
 The check captures:
 
-- Exact GPU model and memory, GPU count, UUIDs, MIG state, clocks, and power
-  limits.
+- Provider, Region/datacenter, instance or Pod type, purchase option, host ID,
+  exact GPU model/memory, physical and visible GPU counts, UUIDs, visibility
+  mask, MIG state, clocks, and power limits.
 - Driver, CUDA, cuDNN, NCCL, PyTorch, NeMo, Megatron Core, and Transformer
   Engine versions as applicable.
 - `nvidia-smi topo -m`, peer-access capability, and visible devices.
@@ -349,7 +372,8 @@ hold constant:
   precision, and effective global batch size.
 - Data order or deterministic synthetic token generation.
 - Warm-up policy and number of measured iterations.
-- Container digest, software versions, GPU type, and topology.
+- Provider, instance/Pod type, container digest, software versions, GPU memory,
+  visible GPU selection, and topology.
 - Correctness gates: finite loss, comparable initial loss, expected parameter
   updates, and appropriate numerical tolerance.
 
@@ -389,8 +413,8 @@ efficiency(N) = speedup(N) / N
 ```
 
 Synthetic tensors/tokens are preferred for isolated compute and communication
-microbenchmarks. End-to-end training comparisons use the canonical packed
-WikiText token stream defined above.
+microbenchmarks. If the shared workload is accepted, end-to-end training
+comparisons use the canonical packed WikiText token stream defined above.
 
 ### Experiment admission and measurement protocol
 
@@ -423,43 +447,83 @@ The company situations below are realistic synthetic scenarios written in the
 style of certification questions. They explain practical motivation without
 claiming that a named real company disclosed the incident.
 
-### EXP-001: Mixed precision and Tensor Cores in distributed training
+### EXP-01: AWS PCIe P2P and NCCL communication
 
-Tags: `precision` `tensor-cores` `ddp` `pytorch` `1-gpu` `2-gpu`
+**Planned compute:** AWS `AWS-G7E-2` only.
 
-**Scenario (exam style):** A financial-services company moves LLM training to
-A100 GPUs. FP32 training is stable but expensive, while an FP16 trial produces
-non-finite gradients and two-GPU scaling is weaker than expected. Which
-precision mode should the team use, and how should it verify that Tensor Cores
-are active without sacrificing acceptable numerical behavior?
+**Scenario (exam style):** A two-GPU EC2 training job scales poorly. The team
+must determine whether the GPUs have a working GPUDirect P2P path, establish the
+path's latency and bandwidth, and then decide whether the job's NCCL messages
+are latency-bound or bandwidth-bound before changing training code.
 
-**Question:** How do FP32, TF32, BF16, and FP16 affect Tensor Core utilization,
-numerical behavior, and one-to-two-GPU DDP scaling on A100?
+**Question:** Does NCCL behavior agree with the measured G7e PCIe topology and
+peer-to-peer transfer characteristics?
 
-**Sweep:** Precision, aligned versus deliberately misaligned matrix dimensions,
-and automatic mixed precision/gradient scaling where applicable. Include a GEMM
+**Procedure:** First capture `nvidia-smi topo -m`, peer-access capability, and
+CUDA `p2pBandwidthLatencyTest` over representative buffer sizes and both
+directions. Then run two-rank `all_reduce`, `reduce_scatter`, `all_gather`,
+`broadcast`, and `all_to_all` from small to large messages. Default NCCL
+settings are the primary result; tuning is a bounded diagnostic appendix.
+
+**Measurements:** Peer-access matrix, unidirectional/bidirectional P2P
+bandwidth and latency, NCCL algorithm and bus bandwidth, collective latency,
+NCCL debug output, topology, available PCIe counters, and profiler timeline.
+
+**Expected result:** Small collectives are latency-bound while large messages
+approach the qualified PCIe path's bandwidth regime. The causal sequence from
+topology to P2P measurement to collective behavior becomes the AWS baseline for
+EXP-07 and EXP-08.
+
+### EXP-02: Mixed precision and Tensor Cores in distributed training
+
+**Planned compute:** `AWS-G7E-1` and `AWS-G7E-2`.
+
+**Scenario (exam style):** A financial-services company moves LLM training to a
+new NVIDIA GPU generation. FP32 training is stable but expensive, while an FP16
+trial produces non-finite gradients and an FP8 trial may silently fall back.
+Which precision mode should the team use, and how should it verify native Tensor
+Core execution without sacrificing acceptable numerical behavior?
+
+**Question:** How do the selected GPU's supported training precisions affect
+Tensor Core utilization, numerical behavior, memory, and one-to-two-GPU DDP
+scaling?
+
+**Sweep:** FP32, TF32, BF16, and FP16; add standard FP8 Current or Delayed
+Scaling through Transformer Engine only after the pinned G7e image proves a
+native SM 12.0 path. Do not add MXFP8 or NVFP4 to the current G7e sweep. Also
+vary aligned versus deliberately misaligned matrix dimensions and use automatic
+mixed precision/gradient scaling where applicable. Include a GEMM
 microbenchmark, one-GPU transformer steps, and the same workload under two-GPU
-DDP with constant effective global batch.
+DDP with constant effective global batch. Record FP8 amax synchronization and
+the actual NCCL communication datatype/bytes rather than assuming FP8 compute
+automatically makes DDP gradient communication FP8.
 
 **Measurements:** Throughput, kernel selection, Tensor Core activity, memory,
-loss/gradient difference from the FP32 reference, and FP16 overflow behavior.
+loss/gradient difference from the FP32 reference, FP16 overflow behavior, DDP
+scaling efficiency, FP8 scaling-reduction overhead, and NCCL time, datatype,
+and bytes.
 
 **Expected result:** Tensor-Core-compatible shapes and reduced precision improve
 throughput; BF16 is normally more numerically robust than FP16 because of its
 wider exponent range. TF32 accelerates eligible FP32 matrix operations while
-retaining FP32 storage.
+retaining FP32 storage. Standard FP8 improves performance only when the actual
+layer, shape, recipe, and kernel take a supported native path. Faster FP8
+computation may increase the fraction of step time spent in unchanged DDP
+communication.
 
-**Boundary:** A100 has no native FP8 Tensor Cores, so FP8 is not included as an
-execution variant.
+**Boundary:** Unsupported formats are recorded as `unsupported` or `fallback`,
+not included as measured native-precision variants. Cross-generation numbers
+are an appendix unless hardware generation is explicitly the independent
+variable.
 
 **Scope note:** This is GPU execution optimization, not model optimization. The
 model architecture and parameter count remain unchanged; the experiment studies
-how A100 executes the same training computation and how precision changes the
-compute-to-communication balance in DDP.
+how the selected GPU executes the same training computation and how precision
+changes the compute-to-communication balance in DDP.
 
-### EXP-002: Microbatch, global batch, and gradient accumulation
+### EXP-03: Microbatch, global batch, and gradient accumulation
 
-Tags: `batching` `memory` `ddp` `pytorch` `1-gpu` `2-gpu`
+**Planned compute:** `AWS-G7E-1` and `AWS-G7E-2`.
 
 **Scenario (exam style):** A retailer doubles its training GPU count but keeps
 the old microbatch and accumulation settings. Throughput improves, yet the
@@ -484,9 +548,9 @@ until memory pressure or kernel behavior reverses the gain; accumulation permits
 a larger effective batch but does not reproduce every property of one physically
 large batch unless loss normalization and synchronization are correct.
 
-### EXP-003: Activation checkpointing/recomputation
+### EXP-04: Activation checkpointing/recomputation
 
-Tags: `memory` `recompute` `pytorch` `1-gpu`
+**Planned compute:** `AWS-G7E-1`.
 
 **Scenario (exam style):** A legal-technology company can train its model at a
 4K-token context, but an 8K-token run OOMs. Buying more GPUs is possible but
@@ -506,19 +570,18 @@ work, and maximum model/sequence/microbatch that fits.
 increasing backward computation. Selective policies should offer a better
 trade-off than recomputing everything for many workloads.
 
-### EXP-004: PyTorch SDPA/FlashAttention, fusion, and `torch.compile`
+### EXP-05: PyTorch SDPA/FlashAttention and operator fusion
 
-Tags: `kernels` `attention` `sdpa` `flash-attention` `compile` `pytorch`
-`1-gpu`
+**Planned compute:** `AWS-G7E-1`.
 
 **Scenario (exam style):** An AI startup's profiler shows thousands of short
 CUDA kernels separated by launch gaps, and eager attention materializes a large
-score matrix. The GPU has free compute capacity. Should the team enable
-FlashAttention, compile the graph, or do both—and how can it isolate the
-contribution of each change?
+score matrix. The GPU has free compute capacity. Should the team select a fused
+attention backend, enable broader operator fusion, or do both—and how can it
+verify which kernel actually executed?
 
-**Question:** Which memory and throughput changes come from PyTorch's attention
-backend, and which come from general graph compilation/fusion?
+**Question:** Which memory and throughput changes come from the attention
+backend, and which come from more general operator fusion?
 
 **Sweep:** Use fixed shapes and compare, in order:
 
@@ -527,11 +590,12 @@ backend, and which come from general graph compilation/fusion?
 2. PyTorch SDPA automatic backend selection, while recording the selected
    backend.
 3. PyTorch SDPA with `SDPBackend.FLASH_ATTENTION` forced when Qwen3's GQA shape,
-   dtype, and A100 support it; record a skip/fallback rather than relabeling
+   dtype, and selected GPU support it; record a skip/fallback rather than relabeling
    another kernel as FlashAttention.
-4. `torch.compile` on the math/eager path to isolate compilation.
-5. `torch.compile` combined with the validated FlashAttention path to measure
-   whether the optimizations are complementary.
+4. As a secondary implementation variant, apply `torch.compile` to the
+   math/eager path and then to the validated FlashAttention path. This checks
+   whether broader graph fusion is complementary without turning compilation
+   into a separate curriculum objective.
 
 Efficient-attention or cuDNN SDPA backends may be recorded as secondary variants
 if supported by the pinned PyTorch build. Do not install a separate attention
@@ -554,9 +618,9 @@ with its pinned backend policy (normally automatic selection). They must record
 the actual Transformer Engine backend, but they do not repeat this PyTorch
 backend sweep unless attention itself is the independent variable.
 
-### EXP-005: Profiler triangulation
+### EXP-06: Profiler triangulation
 
-Tags: `profiling` `nsys` `ncu` `pytorch-profiler` `1-gpu`
+**Planned compute:** `AWS-G7E-1`.
 
 **Scenario (exam style):** A media company sees only 35% average GPU utilization
 during LLM training. One engineer suspects slow Python launches, another
@@ -568,7 +632,7 @@ these bottlenecks?
 timeline, and individual-kernel levels?
 
 **Procedure:** Profile one controlled slow variant and one optimized variant
-from EXP-004 with PyTorch Profiler, Nsight Systems, and Nsight Compute. Add NVTX
+from EXP-05 with PyTorch Profiler, Nsight Systems, and Nsight Compute. Add NVTX
 ranges for data loading, forward, backward, communication, and optimizer work.
 
 **Measurements:** Compare operator attribution, CPU/GPU overlap, CUDA launch
@@ -578,82 +642,13 @@ limits. Record unavailable hardware counters rather than substituting guesses.
 **Why core:** Performance profiling and troubleshooting are explicit NCP-GENL
 objectives; this experiment teaches when each profiler is appropriate.
 
-### EXP-006: Input-pipeline starvation
+### EXP-07: DDP scaling and communication overlap
 
-Tags: `data-pipeline` `cpu` `ddp` `pytorch` `1-gpu` `4-gpu`
+**Planned compute:** AWS `AWS-G7E-1`, `AWS-G7E-2`, and `AWS-G7E-4` as
+sequential sub-runs `A1`, `A2`, and `A4`. Every sub-run uses one EC2 instance;
+no distributed job spans instances.
 
-**Scenario (exam style):** An e-commerce company scales from one to four GPUs,
-but aggregate throughput barely changes and Nsight Systems shows long gaps
-before each forward pass. Synthetic tokens remove the gaps. Which DataLoader,
-host-memory, and storage changes should the team test before blaming NCCL?
-
-**Question:** When does data preparation prevent expensive GPUs from reaching
-useful utilization?
-
-**Sweep:** Synthetic pre-generated tokens versus a fixed tokenized dataset;
-DataLoader worker count, pinned memory, prefetching, and persistent workers.
-Repeat the important cases with four DDP ranks.
-
-**Measurements:** Data wait time, CPU/RAM, host-to-device copy time, GPU idle
-gaps, tokens/second, and storage throughput.
-
-**Why optional:** Important operationally, but less central to the Playbook's
-parallelism story and partially separable from GPU training.
-
-### EXP-007: GPU topology and peer-to-peer paths
-
-Tags: `topology` `p2p` `nvlink` `nvidia-tools` `2-gpu` `4-gpu`
-
-**Scenario (exam style):** A research team sees different scaling from two
-apparently identical four-GPU A100 allocations. The software and batch sizes
-match, but the selected GPU pairs have different paths in `nvidia-smi topo -m`.
-Which peer-to-peer test would establish whether topology explains the result?
-
-**Question:** Do observed GPU-to-GPU transfer characteristics agree with the
-reported NVLink/NVSwitch/PCIe topology?
-
-**Sweep:** Relevant GPU pairs and buffer sizes with CUDA
-`p2pBandwidthLatencyTest`; compare peer access and host-staged behavior where a
-safe toggle is available. Run on every GPU count that will be used later.
-
-**Measurements:** Unidirectional/bidirectional bandwidth, latency, peer-access
-matrix, topology labels, and link counters when accessible.
-
-**Expected result:** Link placement and transfer size materially affect achieved
-bandwidth and latency; later process groups should be interpreted using the
-measured topology rather than GPU count alone.
-
-### EXP-008: NCCL collective benchmark
-
-Tags: `nccl` `collectives` `topology` `2-gpu` `4-gpu`
-
-**Scenario (exam style):** A cloud team observes that DDP performs well for a
-large model but poorly for a small model on the same four GPUs. Before changing
-the training code, it needs to know whether gradient messages lie in NCCL's
-latency-bound or bandwidth-bound regime. Which collective and message-size
-sweep should it run, and which bandwidth figure should it report?
-
-**Question:** How do collective type, message size, and world size affect
-single-node communication cost?
-
-**Sweep:** `all_reduce`, `reduce_scatter`, `all_gather`, `broadcast`, and
-`all_to_all` with 2 and 4 GPUs over small-to-large messages.
-Default NCCL settings are the primary result; environment tuning is a small
-diagnostic appendix, not an open-ended search for a lucky configuration.
-
-**Measurements:** Algorithm and bus bandwidth, latency, scaling, topology,
-NCCL debug output, and profiler timeline.
-
-**Expected result:** Small messages are latency-bound, large messages approach
-the fabric's bandwidth regime, and collective algorithms have different
-communication volumes. These results explain later DDP, FSDP, TP, PP, CP, and
-hybrid traces.
-
-### EXP-009: DDP scaling and communication overlap
-
-Tags: `ddp` `scaling` `overlap` `pytorch` `1-gpu` `2-gpu` `4-gpu`
-
-**Scenario (exam style):** A software company expects four A100s to train nearly
+**Scenario (exam style):** A software company expects four GPUs to train nearly
 four times faster than one, but measures only 1.9x speedup. GPU timelines show
 all-reduces extending beyond backward computation. Should it increase local
 work, change bucket behavior, accumulate gradients locally, or conclude the
@@ -675,12 +670,16 @@ hide all-reduce. Fixed-global-batch scaling eventually loses efficiency as work
 per rank shrinks. Accumulating locally should reduce synchronization frequency
 when implemented correctly.
 
-### EXP-010: FSDP sharding and ZeRO-style memory trade-offs
+**Why four GPUs:** The 4-rank sub-run supplies the second doubling in the
+1-to-2-to-4 curve. Without it, the experiment measures one speedup ratio but
+cannot show whether efficiency degrades non-linearly as communication grows.
 
-Tags: `fsdp` `sharding` `memory` `pytorch` `2-gpu` `4-gpu`
+### EXP-08: FSDP sharding and ZeRO-style memory trade-offs
+
+**Planned compute:** AWS `AWS-G7E-2` only.
 
 **Scenario (exam style):** A healthcare company can train its model with DDP on
-four A100s, but assumes full sharding must be better because it uses less memory.
+two GPUs, but assumes full sharding must be better because it uses less memory.
 Which states does FSDP shard, which extra collectives appear, and why can the
 memory-saving configuration be slower when the unsharded model already fits?
 
@@ -701,22 +700,83 @@ size to manufacture an OOM result.
 adds parameter materialization and communication. It may be slower than DDP for
 a model that already fits comfortably.
 
-### EXP-011: Tensor plus sequence parallelism
+### EXP-09: Controlled troubleshooting and failure diagnosis
 
-Tags: `megatron` `tp` `sp` `nvlink` `1-gpu` `2-gpu` `4-gpu`
+**Planned compute:** AWS `AWS-G7E-1` and `AWS-G7E-2`. Use the one-GPU profile
+for controlled input-pipeline baselines and the two-GPU profile for distributed
+faults.
 
-**Scenario (exam style):** An enterprise enables TP=4 on a model that already
-fits on one A100 and expects a fourfold speedup. Instead, per-rank GEMMs shrink
+**Scenario (exam style):** A two-GPU job alternates between hanging in a
+collective, OOMing during backward, producing NaNs after enabling FP16, and
+leaving GPUs idle while workers prepare data. A single "training failed or
+slow" alert does not identify the cause. Which logs, timeouts, memory evidence,
+and profiler patterns distinguish the failure classes and prove the corrective
+action worked?
+
+**Question:** Can common training and distributed failures be recognized from
+their symptoms and diagnosed with the correct PyTorch, NCCL, and NVIDIA
+evidence?
+
+**Fault cases:** One OOM/fragmentation case, one mismatched collective or rank
+configuration caught with a short timeout, one artificial straggler, one
+numerical overflow/non-finite-gradient case, and one input-starvation case.
+For input starvation, compare synthetic pre-generated tokens with the fixed
+tokenized dataset while varying DataLoader workers, pinned memory, prefetching,
+and persistent workers. Faults must be bounded so a compute host is not left
+hanging or consuming money unnoticed.
+
+**Measurements:** Error/log signature, timeline symptom, utilization pattern,
+CPU/RAM and data-wait time where applicable, debug variables used, root cause,
+corrective action, and proof of recovery.
+
+**Expected result:** Each failure produces a distinct evidence pattern; the
+report becomes a practical diagnostic playbook rather than merely a collection
+of successful runs. The input case should show GPU idle gaps disappearing when
+the pipeline rather than NCCL is corrected.
+
+### EXP-10: Runpod NVLink P2P and NCCL communication
+
+**Planned compute:** Runpod `RUNPOD-A100-SXM2` only.
+
+**Scenario (exam style):** A team rents an A100 SXM Pod for model-parallel
+training, but the product name alone does not prove the selected pair is linked
+or that NCCL uses the intended path. It needs one communication qualification
+that connects the observed topology to P2P and collective measurements.
+
+**Question:** Does NCCL behavior agree with the measured A100 SXM NVLink
+topology and peer-to-peer transfer characteristics?
+
+**Procedure:** Repeat EXP-01's topology, P2P buffer-size, collective-type, and
+message-size method on the qualified two-GPU Pod. Record NVLink counters when
+accessible. Keep AWS and Runpod results separate and treat GPU architecture and
+fabric as co-varying environment differences, not as a provider ranking.
+
+**Measurements:** Peer-access matrix, unidirectional/bidirectional P2P
+bandwidth and latency, NCCL algorithm and bus bandwidth, collective latency,
+NCCL debug output, topology, NVLink counters, and profiler timeline.
+
+**Expected result:** A qualified NVLink path should show materially different
+P2P and collective regimes from the AWS PCIe environment. These measurements
+set communication expectations for EXP-11 through EXP-14.
+
+### EXP-11: Tensor plus sequence parallelism
+
+**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
+visible GPUs on the same billed two-GPU Pod so the TP=1 baseline and TP=2 run
+share the exact GPU type and host environment.
+
+**Scenario (exam style):** An enterprise enables TP=2 on a model that already
+fits on one GPU and expects a twofold speedup. Instead, per-rank GEMMs shrink
 and collective time rises. When is tensor parallelism justified, should
-sequence parallelism be enabled, and where does additional TP hurt throughput?
+sequence parallelism be enabled, and why can TP hurt throughput?
 
 **Question:** When does sharding transformer layer tensors reduce memory or
 enable model size, and what communication cost appears?
 
-**Sweep:** TP=1, 2, and 4 on the same Qwen3 model; for TP>1 compare sequence
+**Sweep:** TP=1 and 2 on the same Qwen3 model; for TP=2 compare sequence
 parallelism disabled/enabled where supported and valid. After the baseline is
 correct, compare TP communication overlap disabled/enabled for one representative
-case. Use model shapes divisible by every TP degree.
+case. Use model shapes divisible by TP=2.
 
 **Measurements:** Per-GPU parameter/activation memory, throughput, GEMM sizes,
 all-reduce/all-gather/reduce-scatter time, scaling efficiency, and loss
@@ -727,12 +787,14 @@ communication and smaller per-rank GEMMs can make excessive TP slower. Sequence
 parallelism should reduce duplicated activation memory and changes the
 collective pattern; it does not consume another multiplicative GPU dimension.
 
-### EXP-012: Pipeline schedules and bubble size
+### EXP-12: Pipeline schedules and bubble size
 
-Tags: `megatron` `pp` `scheduling` `microbatch` `2-gpu` `4-gpu`
+**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
+visible GPUs on the same billed Pod so PP=1 and PP=2 share the image, GPU type,
+and host environment.
 
 **Scenario (exam style):** A pharmaceutical company partitions a deep model
-across four GPUs, yet the trace shows some stages idle while others work. The
+across two GPUs, yet the trace shows one stage idle while the other works. The
 global batch cannot grow without limit. How should the team choose microbatch
 count, 1F1B scheduling, and layer placement to reduce the bubble without
 creating excessive activation memory?
@@ -740,7 +802,7 @@ creating excessive activation memory?
 **Question:** How do microbatch count and schedule determine pipeline bubbles,
 memory, and throughput?
 
-**Sweep:** PP=1, 2, and 4; several microbatch counts; a flush/GPipe-style
+**Sweep:** PP=1 and 2; several microbatch counts; a flush/GPipe-style
 schedule and 1F1B where exposed by the pinned NeMo/Megatron release. Add virtual
 pipeline stages only as a final variant if the basic result is clear.
 
@@ -751,9 +813,10 @@ point-to-point time, throughput, load balance, and timeline shape.
 memory and batch geometry. Imbalanced layer assignment makes the slowest stage
 the throughput limit.
 
-### EXP-013: Context parallelism for long sequences
+### EXP-13: Context parallelism for long sequences
 
-Tags: `megatron` `cp` `long-context` `attention` `1-gpu` `2-gpu` `4-gpu`
+**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
+visible GPUs on the same billed Pod.
 
 **Scenario (exam style):** A document-intelligence company increases context
 length from 4K to 32K tokens. Parameters still fit, but attention activations
@@ -764,7 +827,7 @@ communication become worthwhile?
 **Question:** At what sequence lengths does context parallelism's activation
 memory reduction justify its attention communication?
 
-**Sweep:** CP=1, 2, and 4 over increasing sequence lengths, with constant model
+**Sweep:** CP=1 and 2 over increasing sequence lengths, with constant model
 and documented global batch/token conventions. Include a direct comparison with
 activation checkpointing near the single-GPU memory boundary.
 
@@ -776,11 +839,11 @@ agreement.
 contexts. For short contexts its communication/setup cost may lose to CP=1;
 the crossover is the important result.
 
-### EXP-014: TP=2 x DP=2 for model width and throughput
+### EXP-14: TP=2 x DP=2 for model width and throughput
 
-Tags: `megatron` `hybrid` `tp` `dp` `4-gpu`
+**Planned compute:** Runpod `RUNPOD-A100-SXM4` only.
 
-**Scenario (exam style):** A company has four tightly connected A100s and a
+**Scenario (exam style):** A company has four peer-accessible NVIDIA GPUs and a
 medium-size LLM. DP=4 gives high replica throughput but high per-GPU state
 memory; TP=4 reduces layer memory but spends more time in collectives. Would two
 TP ranks replicated across two DP groups provide a better balance for the
@@ -799,45 +862,29 @@ process-group/rank map, and loss agreement.
 trade-off between replica throughput and model/activation sharding and is the
 smallest experiment that tests interacting parallel process groups.
 
+**Why four GPUs:** This is the minimum rank count that gives both TP and DP
+non-trivial group sizes: `TP=2 x DP=2 = 4`. Two GPUs can test either dimension,
+but not their interaction.
+
 **Process-group interpretation:** TP groups `[0,1]` and `[2,3]` each execute one
 model replica, while DP groups `[0,2]` and `[1,3]` synchronize corresponding TP
 shards. The two replicas consume different samples. TP reduces per-GPU layer
 state; DP increases aggregate batch throughput but does not partition a sample's
 context.
 
-### EXP-015: TP=2 x CP=2 for model width and long context
+## Optional operational extension
 
-Tags: `megatron` `hybrid` `tp` `cp` `long-context` `4-gpu`
+### Distributed checkpoint and restart
 
-**Scenario (exam style):** A contract-analysis company must fit a wide model and
-a long context on four GPUs. TP=4 solves the weight problem but makes each GEMM
-small; CP=4 solves activation pressure but duplicates all weights. Would
-TP=2 x CP=2 better match the two independent constraints?
+**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. PyTorch and NeMo/Megatron
+cases run sequentially in their respective containers on the same billed Pod.
 
-**Question:** For a long-context model, is it better to spend four GPUs entirely
-on TP or to divide them between tensor and context parallelism?
-
-**Sweep:** TP=4, CP=4 where valid, and TP=2 x CP=2 at one short and one
-memory-demanding sequence length.
-
-**Measurements:** Weight and activation memory, communication by process group,
-attention versus linear-layer time, throughput, and maximum sequence length.
-
-**Process-group interpretation:** TP groups `[0,1]` and `[2,3]` shard layer
-weights. CP groups `[0,2]` and `[1,3]` split each sequence and exchange attention
-context; they are not independent data replicas. TP reduces layer state, while
-CP reduces per-GPU sequence activation memory. With DP=1, CP does not multiply
-the global batch as DP does in EXP-014.
-
-**Why optional:** It is a strong conceptual hybrid exercise but overlaps the
-separate TP and CP experiments and needs careful batch/sequence normalization.
-
-### EXP-016: Distributed checkpoint and restart
-
-Tags: `checkpointing` `recovery` `sharding` `ddp` `fsdp` `megatron`
+This is not a numbered core experiment and is not included in the catalog
+GPU-hour total. It may be implemented after the exam-focused curriculum when
+operational recovery practice is worth the additional time and cost.
 
 **Scenario (exam style):** A team uses interruptible cloud capacity and loses a
-four-GPU training Pod after several hours. The model reloads, but its next loss
+two-GPU training job after several hours. The model reloads, but its next loss
 differs because optimizer state, RNG state, or data position was not restored.
 What must a distributed checkpoint preserve, and which world-size changes are
 actually supported?
@@ -853,50 +900,36 @@ do not promise arbitrary TP/PP reshaping.
 during save, restored optimizer/RNG/data position, and post-resume loss/update
 agreement.
 
-**Why core:** Sharded-state correctness is operationally important and reveals
-whether the experiment can actually be reproduced after interruption.
+**Why optional:** Sharded-state correctness is useful operational experience,
+but it maps more directly to reliability and lifecycle management than to the
+GPU Acceleration and Optimization domain.
 
-### EXP-017: Controlled troubleshooting and failure diagnosis
+## Final curriculum deliverable
 
-Tags: `troubleshooting` `nccl` `oom` `numerics` `straggler` `2-gpu`
+The project ends with a configuration-selection report and exam decision
+worksheet, not another numbered experiment or dedicated GPU run. It synthesizes
+the accepted experiments, links each result to an NCP-GENL concept, and records
+the evidence that distinguishes plausible exam answers.
 
-**Scenario (exam style):** A two-GPU job alternates between hanging in a
-collective, OOMing during backward, and producing NaNs after enabling FP16. A
-single "training failed" alert does not identify the cause. Which logs,
-timeouts, memory evidence, and profiler patterns distinguish the three failure
-classes and prove the corrective action worked?
-
-**Question:** Can common distributed failures be recognized from their symptoms
-and diagnosed with the correct PyTorch, NCCL, and NVIDIA evidence?
-
-**Fault cases:** One OOM/fragmentation case, one mismatched collective or rank
-configuration caught with a short timeout, one artificial straggler, and one
-numerical overflow/non-finite-gradient case. Faults must be bounded so a Pod is
-not left hanging or consuming money unnoticed.
-
-**Measurements:** Error/log signature, timeline symptom, utilization pattern,
-debug variables used, root cause, corrective action, and proof of recovery.
-
-**Expected result:** Each failure produces a distinct evidence pattern; the
-report becomes a practical diagnostic playbook rather than merely a collection
-of successful runs.
-
-### EXP-018: End-to-end configuration-selection capstone
-
-Tags: `capstone` `cost` `comparison` `ddp` `fsdp` `tp` `pp` `hybrid`
+The report also records one deliberate coverage boundary: the official GPU
+Acceleration and Optimization domain includes inference, while this repository
+implements distributed-training experiments only. Inference batching,
+TensorRT-LLM/Triton execution, and serving latency remain study-note topics and
+are not silently claimed as hands-on coverage.
 
 **Scenario (exam style):** A CTO asks for the cheapest way to process a fixed
-number of training tokens on one to four A100s while respecting a memory limit
-and delivery deadline. Teams advocate DDP, FSDP, TP, and PP using results from
+number of training tokens on a two-GPU server while respecting a memory limit
+and delivery deadline. Teams advocate DDP, FSDP, and PP using results from
 different workloads. How should the options be normalized, and which decision
 rule selects a configuration without claiming one strategy is universally
 best?
 
 **Question:** Given a fixed model, sequence length, effective global batch, and
-one-to-four-GPU budget, which configuration best satisfies a stated objective?
+two-GPU budget, which configuration best satisfies a stated objective?
 
-**Candidate configurations:** Single GPU, DDP, FSDP, TP, PP, and TP=2 x DP=2.
-Only configurations already validated in earlier experiments are eligible.
+**Candidate configurations:** Use only configurations already validated by the
+numbered experiments. Keep AWS and Runpod evidence in separate hardware tables;
+do not normalize unlike GPUs into a false provider ranking.
 
 **Objectives:** Evaluate at least maximum throughput under a memory limit and
 minimum memory under a throughput floor. Include estimated cost per fixed token
@@ -908,8 +941,8 @@ where valid, communication fraction, implementation complexity, and projected
 GPU-hours/cost and energy for a fixed workload.
 
 **Expected result:** The best parallel strategy depends on the binding
-constraint. This report should state a decision rule, not declare one framework
-or parallelism strategy universally fastest.
+constraint. The report states decision rules, not one universally fastest
+framework or layout, and adds short exam-style questions for every core result.
 
 ## Scope boundary
 
@@ -920,47 +953,67 @@ from the numbered catalog.
 
 ## Proposed implementation order
 
-Dependencies matter more than experiment numbering:
+Experiment numbering defines the recommended provider-blocked order. A later
+experiment still starts only after its explicit prerequisites pass:
 
 1. **Preflight:** implement the mandatory qualification script.
-2. **GPU execution fundamentals:** EXP-001 through EXP-005, and optionally
-   EXP-006.
-3. **Communication baseline:** EXP-007 and EXP-008.
-4. **Replicated and sharded data parallelism:** EXP-009 and EXP-010.
-5. **Model-parallel dimensions:** EXP-011 through EXP-013.
-6. **Hybrid layouts:** EXP-014 and optionally EXP-015.
-7. **Operational correctness:** EXP-016 and EXP-017.
-8. **Synthesis:** EXP-018.
+2. **AWS communication baseline:** EXP-01.
+3. **AWS execution fundamentals and profiling:** EXP-02 through EXP-06.
+4. **AWS data parallelism:** EXP-07 and EXP-08.
+5. **AWS troubleshooting:** EXP-09.
+6. **Runpod communication baseline:** EXP-10.
+7. **Runpod model-parallel dimensions:** EXP-11 through EXP-13.
+8. **Runpod hybrid layout:** EXP-14.
+9. **Optional extension:** distributed checkpoint and restart, after the core.
+10. **Synthesis:** write the final curriculum report and exam decision worksheet.
 
-An experiment should not be implemented merely because it is next in the list.
-Its prerequisite correctness and measurement tools must already be validated.
+Compute-profile sub-runs may be batched for cost efficiency, but their reports
+retain this logical order. An experiment should not start merely because it is
+next in the list; prerequisite correctness and measurement tools must already
+be validated.
 
-## Rental-session strategy
+## Compute-session strategy
 
-To reduce idle cloud cost, group final runs after local implementation and
-non-GPU tests pass:
+To reduce idle cloud cost, group final runs only after local implementation and
+non-GPU tests pass. Every session begins with shared qualification and a short
+smoke test and ends only after artifacts reach durable storage.
 
-| Session | Pod size | Candidate work |
-| --- | ---: | --- |
-| A | 1 x A100 SXM | EXP-001 through EXP-005 and one-GPU parts of later experiments |
-| B | 2 x A100 SXM | Two-GPU communication, DDP/FSDP, TP/PP/CP, checkpoint, and troubleshooting points |
-| C | 4 x A100 SXM | Four-GPU scaling, hybrid, and model-parallel points |
+The normal AWS sessions rent the exact active GPU count:
 
-Each session should begin with the shared qualification script and a short smoke
-test, and end only after raw results and profiler artifacts are copied to
-persistent storage.
+| Session | Compute profile | Candidate work |
+| --- | --- | --- |
+| A1 | `AWS-G7E-1` | EXP-02 through EXP-06 baselines, EXP-07 `A1`, and EXP-09 input baseline |
+| A2 | `AWS-G7E-2` | EXP-01/02/03, EXP-07 `A2`, EXP-08, and EXP-09 |
+| A4 | `AWS-G7E-4` | EXP-07 `A4` only |
+
+`AWS-G7E-4` consumes the complete 96-vCPU G/VT quota. Before launching it, the
+lifecycle adapter must verify that no other G or VT instance is running in the
+Region. G6e, G5, G6, or another AWS family is not a silent fallback: changing
+the GPU or instance type changes the environment and requires updating the
+planned compute profile and expected results.
+
+Use separate exact-size Runpod sessions after local preparation is complete:
+
+| Session | Compute profile | Visible-GPU phases | Candidate work |
+| --- | --- | ---: | --- |
+| R2 | `RUNPOD-A100-SXM2` | 1, 2 | EXP-10 followed by all two-GPU NeMo/Megatron work, EXP-11 through EXP-13; add the optional checkpoint extension only if selected |
+| R4 | `RUNPOD-A100-SXM4` | 4 | EXP-14 only |
+
+The R2 session pays for two GPUs even during a one-visible-GPU baseline. The R4
+session is not launched until EXP-11 is correct and EXP-14's rank map passes a
+local/configuration check. AWS and Runpod results remain separate because GPU
+generation, memory technology, CPU allocation, and interconnect all differ.
 
 ## Selection questions
 
 The following decisions should be made before implementation begins:
 
-1. Accept the proposed shared workload contract, including Qwen3-1.7B-Base,
-   WikiText-103, full-parameter continued pretraining, and correctness-only
-   evaluation?
+1. Accept the remaining proposed workload choices: Qwen3-1.7B-Base, the
+   WikiText-103 tokenization/packing pipeline, BF16 as the default benchmark
+   precision, and the correctness-only evaluation boundary?
 2. Accept the proposed core set as-is, or set an overall GPU-hour/budget cap?
-3. Is a long-context hybrid worth EXP-015 after separate TP and CP results?
-4. Should input-pipeline work (EXP-006) be retained or deferred until all core
-   distributed experiments are complete?
+3. After the 14 core experiments, is the optional distributed-checkpoint
+   extension worth its additional implementation time and GPU cost?
 
 ## Primary sources
 
@@ -970,8 +1023,19 @@ The following decisions should be made before implementation begins:
 - [Megatron Core context parallelism](https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/features/context_parallel.html)
 - [PyTorch FSDP2 documentation](https://docs.pytorch.org/docs/stable/distributed.fsdp.fully_shard.html)
 - [NVIDIA A100 Tensor Core precisions](https://www.nvidia.com/en-eu/data-center/tensorcore/)
+- [NVIDIA Transformer Engine supported hardware and precision formats](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/)
+- [NVIDIA CUDA GPU compute capabilities](https://developer.nvidia.com/cuda/gpus)
+- [Transformer Engine FP8 Delayed Scaling](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/fp8_delayed_scaling/fp8_delayed_scaling.html)
+- [Transformer Engine MXFP8 supported devices](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/mxfp8/mxfp8.html)
+- [Transformer Engine NVFP4 supported devices](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/nvfp4/nvfp4.html)
+- [NVIDIA RTX PRO 6000 Blackwell Server Edition](https://www.nvidia.com/en-us/data-center/rtx-pro-6000-blackwell-server-edition/)
+- [NVIDIA L40S specifications](https://www.nvidia.com/en-us/data-center/l40s/)
+- [AWS G7e instance specifications](https://aws.amazon.com/ec2/instance-types/g7e/)
+- [AWS G6e instance specifications](https://aws.amazon.com/ec2/instance-types/g6e/)
+- [Runpod GPU type IDs](https://docs.runpod.io/references/gpu-types)
+- [Runpod A100 SXM specifications](https://www.runpod.io/gpu-models/a100-sxm)
 - [PyTorch SDPA backend selection](https://docs.pytorch.org/docs/stable/generated/torch.nn.attention.sdpa_kernel.html)
 - [NVIDIA FlashAttention and Transformer Engine guidance](https://docs.nvidia.com/nemo-framework/user-guide/latest/nemotoolkit/features/optimizations/attention_optimizations.html)
 - [Qwen3-1.7B-Base model card](https://huggingface.co/Qwen/Qwen3-1.7B-Base)
-- [NVIDIA Megatron Bridge Qwen recipes](https://docs.nvidia.com/nemo/megatron-bridge/latest/models/qwen/qwen.html)
+- [NVIDIA Megatron Bridge Qwen3 recipes](https://docs.nvidia.com/nemo/megatron-bridge/latest/apidocs/bridge/bridge.recipes.qwen.qwen3.html)
 - [WikiText-103 dataset card](https://huggingface.co/datasets/Salesforce/wikitext)

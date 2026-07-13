@@ -1,0 +1,37 @@
+schema_version: 1
+
+provider:
+  profile: null # AWS-G7E-1/2/4 or RUNPOD-A100-SXM2/4.
+  name: null # aws or runpod
+  location: null # AWS Region or Runpod datacenter.
+  resource_type: null # EC2 instance type or Runpod Pod/GPU offer.
+  purchase_option: null # on_demand, spot, secure_cloud, or community_cloud.
+
+container:
+  registry: null # ecr for AWS; ghcr for Runpod.
+  image: null
+  digest: null # Required for a recorded run; mutable tags are insufficient.
+
+compute:
+  single_node: true
+  physical_gpu_count: null
+  visible_gpu_count: null
+  visible_devices: []
+  expected_gpu_name: null
+  expected_gpu_architecture: null
+  expected_gpu_memory_gib: null
+
+storage:
+  durable_input_uri: null
+  durable_output_uri: null
+  staging_root: null
+  cache_root: null
+
+lifecycle:
+  maximum_instance_hours: null
+  maximum_cost: null
+  terminate_after_stage_out: true
+
+tags:
+  project: multi-gpu-training
+  environment: experiment
