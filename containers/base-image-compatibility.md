@@ -1,6 +1,6 @@
 # Base Image Compatibility Record
 
-Checked: 2026-07-13
+Checked: 2026-07-14
 
 This record captures local, CPU-only compatibility checks on the Ubuntu
 x86_64 workstation before adding project Dockerfiles. It does not replace the
@@ -105,6 +105,18 @@ It contains `/usr/local/bin/p2pBandwidthLatencyTest`, `nccl-tests`, Nsight
 tools, and the existing PyTorch runtime packages. Running the CUDA sample on
 the non-NVIDIA local workstation still fails with a missing/insufficient CUDA
 driver, which is expected; GPU execution remains provider-side qualification.
+
+After the EXP-01 source preparation commit, the PyTorch image was rebuilt from
+Git commit `98ed22f8e54a` and published to ECR for AWS-side qualification.
+
+| Image family | Local tag | ECR tag | ECR digest | Pushed | Scan state |
+| --- | --- | --- | --- | --- | --- |
+| PyTorch EXP-01 | `multi-gpu-training-pytorch:exp01-20260714-98ed22f` | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:exp01-20260714-98ed22f` | `sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c` | `2026-07-14T01:14:55Z` | `IN_PROGRESS` at publication |
+
+The image status was `ACTIVE` after push. A local smoke check confirmed
+`p2pBandwidthLatencyTest` and `all_reduce_perf` are on `PATH`; executing the
+CUDA sample still fails locally with the expected missing/insufficient CUDA
+driver error.
 
 ## ECR Publication Smoke Test
 

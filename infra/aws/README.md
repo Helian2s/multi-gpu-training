@@ -98,6 +98,15 @@ Run it locally with:
 make aws-exp01-preflight
 ```
 
+The current recorded EXP-01 image is:
+
+```text
+037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c
+```
+
+It was published as tag `exp01-20260714-98ed22f`; ECR reported the image as
+`ACTIVE`, with scan-on-push still `IN_PROGRESS` immediately after publication.
+
 The wrapper intentionally does not call `ec2 run-instances`, publish images, or
 change AWS resources. A later launch wrapper must keep the same gates and add
 explicit launch confirmation, maximum lifetime enforcement, artifact stage-out,

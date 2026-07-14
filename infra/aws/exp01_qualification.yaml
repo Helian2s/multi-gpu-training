@@ -18,8 +18,8 @@ compute:
 image:
   registry: 037678282394.dkr.ecr.us-west-2.amazonaws.com
   repository: multi-gpu-training-pytorch
-  tag: null # Fill after rebuilding and publishing the EXP-01-capable image.
-  digest: null
+  tag: exp01-20260714-98ed22f
+  digest: sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c
 
 identity:
   instance_profile: FinetuningGpuInstanceRole
