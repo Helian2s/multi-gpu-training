@@ -1,7 +1,7 @@
 # Proposed experiment catalog
 
 Document status: Planning worksheet; all numbered experiments are proposed
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 Governing decisions: [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md)
 
 ## Document role and authority
@@ -294,14 +294,14 @@ pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 | ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
 | --- | --- | --- | ---: | --- | ---: | --- |
 | EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-G7E-2` | 1.5-3.0 | proposed |
-| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-G7E-1/2` | 1.0-2.0 | proposed |
-| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1, 2 | AWS `AWS-G7E-1/2` | 1.0-2.0 | proposed |
+| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-G7E-1`; representative AWS `AWS-G7E-2` checks | 1.0-2.0 | proposed |
+| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1, optional 2 | AWS `AWS-G7E-1`; optional AWS `AWS-G7E-2` DP sanity check | 1.0-2.0 | proposed |
 | EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-G7E-1` | 0.5-1.0 | proposed |
 | EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
 | EXP-06 | Profiler triangulation | PyTorch/NVIDIA tools | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
 | EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2, 4 | AWS `AWS-G7E-1/2/4` | 4.0-8.0 | proposed |
 | EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-G7E-2` | 1.0-2.0 | proposed |
-| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-G7E-1/2` | 1.5-3.0 | proposed |
+| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-G7E-1`; AWS `AWS-G7E-2` for distributed faults only | 1.5-3.0 | proposed |
 | EXP-10 | Runpod NVLink P2P and NCCL communication | NCCL/NVIDIA tools | 2 | Runpod `RUNPOD-A100-SXM2` | 1.5-3.0 | proposed |
 | EXP-11 | Tensor plus sequence parallelism | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 2.0-4.0 | proposed |
 | EXP-12 | Pipeline schedules and bubble size | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
@@ -317,6 +317,15 @@ These are **active experiment GPU-hours**, not necessarily provider-billed
 accelerator hours. Cost uses the complete EC2 instance or Runpod Pod. G7e offers
 exact one-, two-, and four-GPU sizes; another family may require paying for
 masked GPUs.
+
+The AWS phase intentionally keeps G7e as the normal family so precision,
+topology, memory, profiler, and communication observations stay within one GPU
+generation. Cost control should come first from reducing optional two-GPU
+sub-runs and tightly gating the single four-GPU run, not from silently switching
+to G6e, G6, G5, or another family. A cheaper family may be proposed only as an
+explicit contingency because it changes GPU architecture, memory size,
+interconnect behavior, supported precision paths, and often the exact GPU-count
+shape.
 
 Each numbered experiment has exactly one provider. A scale experiment may use
 sequential instance sizes from that provider, but every sub-run still uses one
@@ -474,7 +483,11 @@ EXP-07 and EXP-08.
 
 ### EXP-02: Mixed precision and Tensor Cores in distributed training
 
-**Planned compute:** `AWS-G7E-1` and `AWS-G7E-2`.
+**Planned compute:** `AWS-G7E-1` for the full precision and Tensor Core sweep.
+Use `AWS-G7E-2` for representative two-rank DDP checks after the AWS
+communication baseline is qualified; do not repeat every precision and shape
+combination on two GPUs unless the one-GPU result makes the DDP interaction
+material.
 
 **Scenario (exam style):** A financial-services company moves LLM training to a
 new NVIDIA GPU generation. FP32 training is stable but expensive, while an FP16
@@ -521,7 +534,9 @@ changes the compute-to-communication balance in DDP.
 
 ### EXP-03: Microbatch, global batch, and gradient accumulation
 
-**Planned compute:** `AWS-G7E-1` and `AWS-G7E-2`.
+**Planned compute:** `AWS-G7E-1` primary. Use `AWS-G7E-2` only for a bounded
+optional repeat that demonstrates the data-parallel term in the global-batch
+formula after the two-GPU AWS baseline is already qualified.
 
 **Scenario (exam style):** A retailer doubles its training GPU count but keeps
 the old microbatch and accumulation settings. Throughput improves, yet the
@@ -534,8 +549,10 @@ utilization, optimizer frequency, and throughput while preserving effective
 global batch size?
 
 **Sweep:** Several `(microbatch, accumulation_steps)` pairs with constant global
-batch. Optionally repeat on two GPUs to demonstrate the DP term in
-`global_batch = microbatch x accumulation_steps x data_parallel_size`.
+batch on one GPU. Optionally repeat a small representative subset on two GPUs
+to demonstrate the DP term in
+`global_batch = microbatch x accumulation_steps x data_parallel_size`; do not
+repeat the full one-GPU sweep merely to fill two-GPU time.
 
 **Measurements:** Peak memory, tokens/second, step time per optimizer update,
 GPU utilization, number of synchronization operations, loss, and gradient
@@ -700,9 +717,10 @@ a model that already fits comfortably.
 
 ### EXP-09: Controlled troubleshooting and failure diagnosis
 
-**Planned compute:** AWS `AWS-G7E-1` and `AWS-G7E-2`. Use the one-GPU profile
-for controlled input-pipeline baselines and the two-GPU profile for distributed
-faults.
+**Planned compute:** AWS `AWS-G7E-1` for one-rank failure and input-pipeline
+cases. Use `AWS-G7E-2` only for distributed faults that genuinely require two
+ranks, such as mismatched collectives, rank stragglers, and NCCL timeout
+evidence.
 
 **Scenario (exam style):** A two-GPU job alternates between hanging in a
 collective, OOMing during backward, producing NaNs after enabling FP16, and
@@ -716,8 +734,8 @@ their symptoms and diagnosed with the correct PyTorch, NCCL, and NVIDIA
 evidence?
 
 **Fault cases:** One OOM/fragmentation case, one mismatched collective or rank
-configuration caught with a short timeout, one artificial straggler, one
-numerical overflow/non-finite-gradient case, and one input-starvation case.
+configuration caught with a short timeout, one distributed artificial straggler,
+one numerical overflow/non-finite-gradient case, and one input-starvation case.
 For input starvation, compare synthetic pre-generated tokens with the fixed
 tokenized dataset while varying DataLoader workers, pinned memory, prefetching,
 and persistent workers. Faults must be bounded so a compute host is not left
@@ -980,8 +998,8 @@ The normal AWS sessions rent the exact active GPU count:
 
 | Session | Compute profile | Candidate work |
 | --- | --- | --- |
-| A1 | `AWS-G7E-1` | EXP-02 through EXP-06 baselines, EXP-07 `A1`, and EXP-09 input baseline |
-| A2 | `AWS-G7E-2` | EXP-01/02/03, EXP-07 `A2`, EXP-08, and EXP-09 |
+| A1 | `AWS-G7E-1` | EXP-02 through EXP-06 baselines, EXP-07 `A1`, and EXP-09 one-rank OOM, numerical, and input-pipeline cases |
+| A2 | `AWS-G7E-2` | EXP-01, representative EXP-02 two-rank checks, optional EXP-03 DP sanity check, EXP-07 `A2`, EXP-08, and EXP-09 distributed faults |
 | A4 | `AWS-G7E-4` | EXP-07 `A4` only |
 
 `AWS-G7E-4` consumes the complete 96-vCPU G/VT quota. Before launching it, the
