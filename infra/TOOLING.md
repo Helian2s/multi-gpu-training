@@ -31,39 +31,38 @@ builds should normally move to the Ubuntu workstation.
 Role: preferred local machine for native `linux/amd64` container pulls and
 builds and other CPU/RAM/disk-intensive preparation.
 
-Status: **not yet audited**. The first session on this workstation must replace
-the unknown entries with observed facts; it must not copy readiness from macOS.
+Status: **audited with pending provider and registry checks**. Local repository
+checks and input verification pass, and Docker can run native `linux/amd64`
+containers with Buildx.
 
 | Capability | Tool/status | Readiness |
 | --- | --- | --- |
-| OS, CPU, RAM, and storage | Exact Ubuntu release, Intel CPU, RAM, and free disk are not recorded | Pending local audit |
-| Git repository work | Version and authentication are not recorded | Pending local audit |
-| Native OCI image build | Docker Engine, Buildx, BuildKit, and `linux/amd64` behavior are not recorded | Pending local audit |
-| NVIDIA GPU runtime | Local GPU and NVIDIA Container Toolkit availability are not known | Pending local audit; cloud GPU validation remains mandatory |
-| NVIDIA NGC access | Registry authentication and base-image pulls are not tested | Pending only when image work is approved |
-| AWS API and ECR | AWS CLI, identity, Region, IAM, S3, and ECR access are not recorded | Pending local audit |
-| GitHub and GHCR | GitHub CLI and package read/write access are not recorded | Pending local audit |
-| Runpod | CLI and API connectivity are not recorded | Optional until a Runpod lifecycle task is assigned here |
-| Local model and dataset inputs | Local snapshots and canonical token streams are not recorded | Reproduce or transfer with manifest verification when needed |
+| OS, CPU, RAM, and storage | Ubuntu 24.04.4 LTS on x86_64; Intel Core i7-12700K with 20 logical CPUs; 31 GiB RAM and 8 GiB swap; project and Docker storage share `/dev/nvme0n1p2` with 750 GiB free of 915 GiB after local image builds | Ready for source work, input verification, and large local image pulls/builds |
+| Git repository work | Git 2.43.0; checkout on `main` tracking `origin/main`; origin is `git@github.com:Helian2s/multi-gpu-training.git`; `git ls-remote origin` succeeded and GitHub SSH authentication identified `Helian2s` | Ready for local and remote Git work |
+| JSON, transfers, and remote shell | `jq` 1.7, OpenSSH 9.6p1, and `rsync` 3.2.7 | Ready |
+| Local entry points and analysis | GNU Make 4.3 and Python 3.12.3; `make check` passed; ignored `.venv` prepared with `requirements-preparation.txt` | Ready for current scaffold and input verification; container Python remains separately pinned |
+| Native OCI image build | Docker Engine 29.1.3 daemon is running; Buildx 0.30.1 with BuildKit v0.26.2 is installed; Docker Hub manifest lookup succeeded; `docker run --rm --platform linux/amd64 alpine:3.20 uname -m` returned `x86_64`; local Docker images include pulled NGC bases and candidate project images `multi-gpu-training-pytorch:local` and `multi-gpu-training-nemo:local`, using about 64.8 GiB total | Ready for local native `linux/amd64` pulls and image builds; project GPU validation still requires a provider host |
+| NVIDIA GPU runtime | `lspci` shows Intel integrated graphics only; `nvidia-smi` is not installed; no `/dev/nvidia*` devices are visible; Docker runtimes are `io.containerd.runc.v2` and `runc` only | No local CUDA validation; cloud GPU validation remains mandatory |
+| NVIDIA NGC access | SSM SecureString `/finetuning/ngc/api-key` exists for NGC authentication; Docker login to `nvcr.io` using that value succeeded with a temporary Docker config; manifest access succeeded for candidate bases `nvcr.io/nvidia/pytorch:26.06-py3` (`sha256:43c018d6a12963f1a1bad85ef8574b5c2a978eec2be0ebcacfb87f69e0d210e1`) and `nvcr.io/nvidia/nemo:26.06` (`sha256:64fcec59b0eeee2853761d16767c603e03e0aa4ba03becc9a7793bb0c46545e7`); local CPU-only inspection is recorded in `containers/base-image-compatibility.md` | Ready for NGC-derived Dockerfile design; candidate digests are verified but not yet accepted project image pins |
+| AWS API and ECR | AWS CLI 2.33.27 is authenticated with profile `finetuning-local` as account `037678282394` in `us-west-2`; private ECR repositories `multi-gpu-training-pytorch` and `multi-gpu-training-nemo` exist at `037678282394.dkr.ecr.us-west-2.amazonaws.com` with immutable tags, AES256 encryption, scan-on-push, and untagged-image cleanup after 7 days; Docker ECR credential helper 0.6.4 is installed and `~/.docker/config.json` maps the project ECR registry to `ecr-login`; helper profile `finetuning-ecr-helper` uses `credential_process` to export short-lived credentials from `finetuning-local`; candidate images were pushed with immutable tag `publish-test-20260713-36621dd` and ECR digests recorded in `containers/base-image-compatibility.md`; PyTorch ECR scan completed with findings pending review, while NeMo scan was still `IN_PROGRESS`; existing EC2 instance role `FinetuningGpuInstanceRole` has inline policy `FinetuningGpuEcrPullOnly` allowing pull-only access to the two project repositories; IAM simulation allows pull actions and denies `ecr:PutImage`; old `FT-EXP-00` `g6e.2xlarge` instance `i-0c769a18f50fd1fe6` was terminated and its 100 GiB and 250 GiB EBS volumes no longer exist | Ready for local ECR push/pull mechanics; EC2 pull validation, GHCR mirror publication, scan review, and provider-side GPU qualification remain pending |
+| GitHub and GHCR | GitHub CLI 2.45.0 is authenticated as `Helian2s` through the local keyring; `gh repo view` reports `ADMIN` permission on `Helian2s/multi-gpu-training`; Docker login to `ghcr.io` with the `gh` token succeeded and was then removed; `gh api /user/packages?package_type=container` failed because the token lacks `read:packages` | Ready for repository automation and basic GHCR connectivity; package read/write requires package scopes or GitHub Actions package permissions |
+| Runpod | `runpodctl` is not installed | Optional until a Runpod lifecycle task is assigned here; paid use remains blocked until the exposed key is rotated |
+| Local model and dataset inputs | `data/raw` is 3.6 GiB and `data/processed` is 550 MiB; `make verify-inputs` passed for 10 model files, 6 dataset files, and 9 processed files | Ready locally; durable S3 and Runpod copies are still pending |
 
 ## Required next checks
 
-1. Audit the Ubuntu x86_64 workstation according to `WORKFLOW.md` and fill its
-   readiness table without recording credentials.
-2. Install AWS CLI v2 and select a short-lived authentication method. Verify
-   the caller identity and default Region without writing credentials to this
-   repository.
-3. Build the first pinned project image for `linux/amd64` and verify its content
-   locally before publishing it.
-4. Create the two private ECR repositories in `us-west-2`, an EC2 pull-only
-   role, and a GitHub Actions OIDC publishing role before the first image push.
-5. Configure and verify GHCR package permissions for the mirror. Runpod receives
+1. Add or use GitHub package permissions before GHCR package checks: either
+   refresh the local `gh` token with package scopes or use GitHub Actions with
+   explicit package permissions.
+2. Create a GitHub Actions OIDC publishing role before automated ECR image
+   pushes.
+3. Configure and verify GHCR package permissions for the mirror. Runpod receives
    pull-only credentials; AWS credentials are never stored in Runpod.
-6. Verify access to the selected NGC PyTorch and NeMo base images during the
-   container compatibility build.
-7. Upload the pinned input snapshots and generated manifest to versioned S3 and
+4. Upload the pinned input snapshots and generated manifest to versioned S3 and
    Runpod network-volume paths, then verify their checksums.
-8. On the first host from each compute profile, run qualification for the
+5. Verify ECR image pull through `FinetuningGpuInstanceRole` during AWS host
+   qualification.
+6. On the first host from each compute profile, run qualification for the
    NVIDIA driver, container runtime, CUDA, NCCL, DCGM, Nsight Systems, Nsight
    Compute, storage, image pull, topology, and termination guard. These tools
    cannot be validated on the non-NVIDIA local workstation.

@@ -1,0 +1,123 @@
+# Base Image Compatibility Record
+
+Checked: 2026-07-13
+
+This record captures local, CPU-only compatibility checks on the Ubuntu
+x86_64 workstation before adding project Dockerfiles. It does not replace the
+mandatory provider-side GPU qualification for CUDA, NCCL, profilers, topology,
+or driver compatibility.
+
+## Candidate Images
+
+| Image family | Candidate tag | Manifest digest | linux/amd64 digest | Local tag |
+| --- | --- | --- | --- | --- |
+| PyTorch | `nvcr.io/nvidia/pytorch:26.06-py3` | `sha256:43c018d6a12963f1a1bad85ef8574b5c2a978eec2be0ebcacfb87f69e0d210e1` | `sha256:abd110b23600e877173dafc3078385b7c13ddacd7e0c6a6acb0a864586d59622` | `ncp-genl-base/pytorch:26.06-py3-amd64` |
+| NeMo/Megatron | `nvcr.io/nvidia/nemo:26.06` | `sha256:64fcec59b0eeee2853761d16767c603e03e0aa4ba03becc9a7793bb0c46545e7` | `sha256:bb1dbe94646d5a6490570823cafa0d6f753e1cb60df8f5e89e3b32f3f87893fc` | `ncp-genl-base/nemo:26.06-amd64` |
+
+Both images were pulled by the `linux/amd64` digest and tagged locally for
+inspection. The local tags are convenience aliases only; project Dockerfiles
+must use the immutable source digest.
+
+## Local Inventory
+
+| Check | PyTorch image | NeMo/Megatron image |
+| --- | --- | --- |
+| OS | Ubuntu 24.04.4 LTS | Ubuntu 24.04.4 LTS |
+| Python | 3.12.3 | 3.12.3 |
+| PyTorch | `2.13.0a0+8145d630e8.nv26.06` | `2.12.0a0+0291f960b6.nv26.04.48445190` |
+| `torch.version.cuda` | 13.3 | 13.2 |
+| `nvcc` | CUDA 13.3, `V13.3.33` | CUDA 13.2, `V13.2.78` |
+| NCCL env | `2.30.4` | `2.29.7` |
+| Transformer Engine import | `2.16.0+4220403e` | `2.16.0+4220403e` |
+| Nsight Systems | `2026.3.1.117` | `2026.2.1.210` |
+| Nsight Compute | `2026.2.0.0` | `2026.1.1.0` |
+| CPU torch forward/backward | Passed | Passed |
+
+`torch.cuda.is_available()` returned `False` in both images, as expected on the
+non-NVIDIA local workstation.
+
+## Python Package Findings
+
+### PyTorch Image
+
+The PyTorch image includes the NVIDIA compute stack, Apex, DALI, TensorRT,
+ModelOpt, tokenizers, datasets, safetensors, pandas, and NumPy. It does not
+ship the full accepted workload package set by default; notably,
+`transformers` is absent. A dry-run install of `requirements-preparation.txt`
+completed without resolver failure and would add or update the missing workload
+packages.
+
+### NeMo/Megatron Image
+
+The NeMo image includes:
+
+- `NeMo-FW 26.4`
+- `megatron-core 0.18.0`
+- `megatron-bridge 0.5.0`
+- `megatron-energon 7.3.2`
+- `transformers 5.12.0`
+- `tokenizers 0.22.2`
+- `datasets 4.8.4`
+
+Plain `import nemo` fails because `/opt/NeMo` is not on the default Python
+path. With `PYTHONPATH=/opt/NeMo:/opt/Megatron-Bridge/src:/opt/Megatron-Bridge/3rdparty/Megatron-LM`,
+imports for `nemo`, `megatron.core`, and `megatron.bridge` succeed. The project
+NeMo Dockerfile or launcher should make this path requirement explicit before
+any NeMo experiment is accepted.
+
+The NeMo image emits warnings on the local non-GPU workstation during import,
+including no active CUDA driver, Triton/vLLM CUDA extension warnings, and a
+`pynvml` deprecation warning from `torch.cuda`. These are expected for local
+CPU-only inspection and must be re-evaluated on the provider GPU host.
+
+A dry-run install of `requirements-preparation.txt` completed without resolver
+failure, but it would change framework-adjacent packages such as
+`transformers`, `datasets`, `numpy`, and `pandas`. The NeMo runtime dependency
+lock should therefore be narrower than the local preparation environment and
+should avoid overriding NVIDIA-pinned framework packages unless a compatibility
+test requires it.
+
+## Verdict
+
+Both candidate bases are locally usable and suitable for minimal project image
+builds. They are not yet final experiment image pins.
+
+## Local Project Image Builds
+
+Minimal project Dockerfiles were added after the base-image inspection:
+
+| Image family | Local project tag | Dockerfile | Local smoke result |
+| --- | --- | --- | --- |
+| PyTorch | `multi-gpu-training-pytorch:local` | `containers/pytorch/Dockerfile` | Project scripts compile; `torch`, `transformers`, `tokenizers`, `datasets`, `safetensors`, and `huggingface_hub` import; CPU forward/backward passes |
+| NeMo/Megatron | `multi-gpu-training-nemo:local` | `containers/nemo/Dockerfile` | Project scripts compile; explicit `PYTHONPATH` exposes `nemo`, `megatron.core`, and `megatron.bridge`; CPU forward/backward passes |
+
+The PyTorch Dockerfile installs only the minimal Hugging Face runtime packages
+needed on top of the NGC base. The NeMo Dockerfile does not install additional
+Python packages; it preserves the NVIDIA-pinned NeMo/Megatron stack and makes
+the required source paths explicit.
+
+## ECR Publication Smoke Test
+
+The local candidate images were pushed once to private ECR to verify
+authentication, repository immutability, upload behavior, and digest recording.
+This is not an experiment-ready release tag.
+
+| Image family | ECR tag | ECR digest | Pushed |
+| --- | --- | --- | --- |
+| PyTorch | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:publish-test-20260713-36621dd` | `sha256:d7ae8d63b704df53479ff1de539af134dc08e580f421ca5e9a9cd6bc4092a1b0` | `2026-07-14T00:06:46Z` |
+| NeMo/Megatron | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-nemo:publish-test-20260713-36621dd` | `sha256:f20d987b4b8e6ad413cea4abef7d6018672e8dd85ab2d31e065fe3e5747963a0` | `2026-07-14T00:14:00Z` |
+
+Both ECR image statuses were `ACTIVE` after push. ECR scan-on-push was enabled.
+The PyTorch scan completed and reported 60 critical, 178 high, 236 medium, 14
+low, and 4 undefined findings; these findings have not yet been adjudicated.
+The NeMo scan was still `IN_PROGRESS` at the time of this record. The tags are
+immutable and should remain publication test references only.
+
+Before accepting either image for recorded experiments:
+
+1. Preserve NVIDIA-pinned framework packages unless a tested override is
+   required.
+2. Run provider-side GPU qualification for driver, CUDA, NCCL, Nsight, DCGM,
+   topology, and image execution.
+3. Record final project image digests from ECR and GHCR after the same build is
+   pushed to both registries.

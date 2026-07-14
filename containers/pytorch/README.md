@@ -1,9 +1,16 @@
-# PyTorch image
+# PyTorch Image
 
-Base this image on a pinned NVIDIA NGC PyTorch release. It will contain the
-native PyTorch experiment runtime, NCCL/CUDA tools, NVIDIA profilers, shared
-qualification utilities, and only the model/data libraries accepted for the
-shared workload.
+`Dockerfile` builds the local candidate native PyTorch runtime from the
+inspected immutable NGC PyTorch `linux/amd64` digest. It contains the NVIDIA
+PyTorch, CUDA, NCCL, and profiler stack from the base image plus the minimal
+Hugging Face runtime packages needed for the accepted Qwen/WikiText workload.
 
-The image is not ready for implementation until the base image digest and the
-selected workload dependencies are accepted and compatibility-tested together.
+Build locally with:
+
+```bash
+make build-pytorch-image
+```
+
+The local tag is `multi-gpu-training-pytorch:local`. It is not a recorded
+experiment image until provider-side GPU qualification passes and the same
+content is pushed to ECR and GHCR with immutable digest records.

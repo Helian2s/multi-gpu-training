@@ -10,6 +10,11 @@ selected and compatibility-tested together. Keep exact pins in the Dockerfile
 and dependency lock files, with a short compatibility record; do not duplicate
 those implementation details in `PROJECT_DECISIONS.md`.
 
+Current local base-image inspection is recorded in
+[base-image-compatibility.md](base-image-compatibility.md). That record admits
+candidate bases for Dockerfile design but does not replace provider-side GPU
+qualification or final project image digest recording.
+
 Each image is built once and published to two private registries:
 
 ```text
