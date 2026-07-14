@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,47 @@ def validate_run_id(run_id: str) -> str:
 
 def container_name(run_id: str) -> str:
     return f"exp01-{validate_run_id(run_id)}"
+
+
+def container_name_prefix(config: dict[str, Any]) -> str:
+    container = config.get("container") or {}
+    prefix = container.get("name_prefix", "exp01")
+    if not isinstance(prefix, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", prefix):
+        raise LaunchError(f"container.name_prefix contains unsupported characters: {prefix!r}")
+    return prefix
+
+
+def configured_container_name(config: dict[str, Any], run_id: str) -> str:
+    return f"{container_name_prefix(config)}-{validate_run_id(run_id)}"
+
+
+def container_command(config: dict[str, Any]) -> list[str]:
+    container = config.get("container") or {}
+    command = container.get("command")
+    if command is None:
+        return [
+            "bash",
+            "experiments/exp_01_aws_pcie_p2p_nccl_communication/collect_exp01.sh",
+        ]
+    if (
+        not isinstance(command, list)
+        or not command
+        or any(not isinstance(item, str) or not item for item in command)
+    ):
+        raise LaunchError("container.command must be a non-empty list of strings")
+    return command
+
+
+def container_command_array(config: dict[str, Any]) -> str:
+    return " ".join(shlex.quote(item) for item in container_command(config))
+
+
+def cuda_visible_devices(config: dict[str, Any]) -> str:
+    container = config.get("container") or {}
+    value = container.get("cuda_visible_devices", "0,1")
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9,]+", value):
+        raise LaunchError(f"container.cuda_visible_devices is invalid: {value!r}")
+    return value
 
 
 def git_commit() -> str:
@@ -301,12 +343,15 @@ def user_data_script(config: dict[str, Any], run_id: str, hold_open_on_exit: boo
     region = config["aws"]["region"]
     registry = config["image"]["registry"]
     lifetime_seconds = int(config["safety"]["maximum_lifetime_minutes"]) * 60
+    container = configured_container_name(config, run_id)
     host_run_dir = f"/opt/multi-gpu-training/artifacts/runs/{config['experiment_id']}/{run_id}"
     container_run_dir = f"/workspace/artifacts/runs/{config['experiment_id']}/{run_id}"
     artifact_target = f"s3://{bucket}/{prefix}/runs/{run_id}/"
     hold_value = "1" if hold_open_on_exit else "0"
     inspection_seconds = post_run_inspection_seconds(config, hold_open_on_exit)
     inspection_minutes = inspection_seconds // 60
+    command_array = container_command_array(config)
+    visible_devices = cuda_visible_devices(config)
 
     return textwrap.dedent(
         f"""\
@@ -322,7 +367,9 @@ def user_data_script(config: dict[str, Any], run_id: str, hold_open_on_exit: boo
         IMAGE_REF="{image_ref}"
         HOST_RUN_DIR="{host_run_dir}"
         CONTAINER_RUN_DIR="{container_run_dir}"
-        CONTAINER_NAME="{container_name(run_id)}"
+        CONTAINER_NAME="{container}"
+        CONTAINER_COMMAND=({command_array})
+        CUDA_VISIBLE_DEVICES_VALUE="{visible_devices}"
         ARTIFACT_TARGET="{artifact_target}"
         MAX_LIFETIME_SECONDS="{lifetime_seconds}"
         POST_RUN_INSPECTION_SECONDS="{inspection_seconds}"
@@ -419,12 +466,12 @@ def user_data_script(config: dict[str, Any], run_id: str, hold_open_on_exit: boo
           --ulimit memlock=-1 --ulimit stack=67108864 \\
           -e RUN_ID="${{RUN_ID}}" \\
           -e RUN_DIR="${{CONTAINER_RUN_DIR}}" \\
-          -e CUDA_VISIBLE_DEVICES="0,1" \\
+          -e CUDA_VISIBLE_DEVICES="${{CUDA_VISIBLE_DEVICES_VALUE}}" \\
           -e NCCL_DEBUG="INFO" \\
           -e NCCL_DEBUG_SUBSYS="INIT,COLL,GRAPH" \\
           -v "${{HOST_RUN_DIR}}:${{CONTAINER_RUN_DIR}}" \\
           "${{IMAGE_REF}}" \\
-          bash experiments/exp_01_aws_pcie_p2p_nccl_communication/collect_exp01.sh \\
+          "${{CONTAINER_COMMAND[@]}}" \\
           2>&1 | tee "${{HOST_RUN_DIR}}/raw/docker-run.log"
         docker_status="${{PIPESTATUS[0]}}"
         set -e
@@ -516,7 +563,9 @@ def request_summary(
         or request["NetworkInterfaces"][0]["Groups"],
         "instance_profile": request["IamInstanceProfile"]["Name"],
         "image": image_reference(config),
-        "container_name": container_name(run_id),
+        "container_name": configured_container_name(config, run_id),
+        "container_command": shlex.join(container_command(config)),
+        "cuda_visible_devices": cuda_visible_devices(config),
         "artifact_uri": config["artifacts"]["durable_uri"],
         "cache_volume": cache_volume_summary(config),
         "maximum_lifetime_minutes": config["safety"]["maximum_lifetime_minutes"],

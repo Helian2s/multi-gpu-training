@@ -16,6 +16,9 @@ from infra.aws.exp01_launch import (
 )
 
 
+A1_CONFIG = DEFAULT_CONFIG.with_name("a1_qualification.yaml")
+
+
 class Exp01LaunchConfigTest(unittest.TestCase):
     def setUp(self) -> None:
         self.config = load_config(DEFAULT_CONFIG)
@@ -132,6 +135,24 @@ class Exp01LaunchConfigTest(unittest.TestCase):
             summary["confirmation_phrase"],
             "launch EXP-01 AWS-A2 stop-after-90m",
         )
+
+    def test_a1_config_uses_one_gpu_smoke_contract(self):
+        config = load_config(A1_CONFIG)
+        request = build_run_instances_request(config, "test-run")
+        user_data = base64.b64decode(request["UserData"]).decode("utf-8")
+        summary = request_summary(config, request, "test-run")
+
+        self.assertEqual(request["InstanceType"], "g7e.2xlarge")
+        self.assertEqual(config["compute"]["profile"], "AWS-A1")
+        self.assertEqual(config["compute"]["expected_physical_gpus"], 1)
+        self.assertEqual(config["safety"]["required_tags"]["Experiment"], "QUAL-A1")
+        self.assertEqual(summary["container_name"], "qual-a1-test-run")
+        self.assertEqual(summary["cuda_visible_devices"], "0")
+        self.assertIn("all_reduce_perf", summary["container_command"])
+        self.assertIn("CONTAINER_COMMAND=(", user_data)
+        self.assertIn('CUDA_VISIBLE_DEVICES_VALUE="0"', user_data)
+        self.assertIn("expected exactly 1 CUDA device", user_data)
+        self.assertIn("artifacts/QUAL-A1", config["artifacts"]["durable_uri"])
 
 
 if __name__ == "__main__":

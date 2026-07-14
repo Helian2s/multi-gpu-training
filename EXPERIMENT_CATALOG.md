@@ -374,7 +374,7 @@ Current AWS run units:
 
 | Run unit | Parent | Profile | Status | Purpose |
 | --- | --- | --- | --- | --- |
-| `QUAL-A1` | Shared AWS qualification | `AWS-A1` | planned | One-GPU host, image, storage, SSM, and smoke-test qualification |
+| `QUAL-A1` | Shared AWS qualification | `AWS-A1` | in preparation | One-GPU host, image, storage, SSM, and smoke-test qualification |
 | `QUAL-A2` | Shared AWS qualification | `AWS-A2` | in preparation | Two-GPU host, one-/two-visible-GPU masks, image, storage, SSM, topology, P2P, and NCCL smoke qualification |
 | `EXP-01-A2` | EXP-01 | `AWS-A2` | accepted, in preparation | AWS PCIe P2P and NCCL baseline |
 | `EXP-02-A2V1` | EXP-02 | `AWS-A2`, one visible GPU | accepted, in preparation | Full precision and Tensor Core sweep on the acquired AWS-A2 host |
@@ -1072,23 +1072,45 @@ instance is running in the Region. G6e, G5, G6, or another AWS family is not a
 silent fallback: changing the GPU or instance type changes the environment and
 requires updating the planned compute profile and expected results.
 
+### AWS-A1 queue preparation
+
+AWS-A1 can proceed independently while AWS-A2 capacity is unavailable. The
+qualification config uses `g7e.2xlarge`, one visible RTX PRO 6000 GPU, the
+shared AWS PyTorch image digest
+`sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`,
+the retained cache-volume map, and a one-GPU CUDA/NCCL smoke command.
+AWS-A1 and AWS-A2 do not need separate PyTorch images while their software
+stack is identical; the run-unit config selects the EC2 profile, visible GPU
+mask, and qualification or experiment command.
+
+| Queue order | Run unit | Visible GPUs | Current state | Required before launch |
+| ---: | --- | ---: | --- | --- |
+| 1 | `QUAL-A1` | 1 | in preparation | EC2 dry run is authorized; S3 stage-out v5 is validated for `artifacts/QUAL-A1/`; smoke-only ECR scan disposition is recorded; run one-GPU smoke with explicit launch confirmation |
+| 2 | `EXP-03-A1` | 1 | proposed | Accept and implement EXP-03 before creating an experiment directory or measurement launcher |
+| 3 | `EXP-04-A1` | 1 | proposed | Accept and implement EXP-04 before creating an experiment directory or measurement launcher |
+| 4 | `EXP-05-A1` | 1 | proposed | Accept and implement EXP-05 before creating an experiment directory or measurement launcher |
+| 5 | `EXP-06-A1` | 1 | proposed | Accept and implement EXP-06 before creating an experiment directory or measurement launcher |
+
 ### AWS-A2 queue preparation
 
 When `AWS-A2` capacity becomes available, the AWS-A2 session should run the
 ready qualification and accepted work first, then stop unless later proposed
 experiments have already been accepted and implemented.
+The shared PyTorch image scan disposition currently covers qualification smoke
+only; measured experiment runs require either a rebuilt/refreshed image with
+reviewed scan results or an explicit measured-run exception.
 
 | Queue order | Run unit | Visible GPUs | Current state | Required before launch |
 | ---: | --- | ---: | --- | --- |
 | 1 | `QUAL-A2` | 1, 2 | in preparation | Fixed-image pull, cache-volume mount, SSM access, Docker root validation, topology capture, P2P smoke, NCCL smoke, and visibility-mask smoke for `V1` and `V2` |
 | 2 | `EXP-01-A2` | 2 | accepted, in preparation | Use ECR image digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`; stage out `artifacts/EXP-01/`; keep the instance available for the agreed manual inspection window |
-| 3 | `EXP-02-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate GPU smoke and fix S3 stage-out permission before measurement |
-| 4 | `EXP-02-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate DDP smoke and fix S3 stage-out permission before measurement |
-| 5 | `EXP-07-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate one-rank smoke and fix S3 stage-out permission before measurement |
-| 6 | `EXP-07-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate DDP smoke and fix S3 stage-out permission before measurement |
-| 7 | `EXP-08-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate DDP/FSDP smoke and fix S3 stage-out permission before measurement |
-| 8 | `EXP-09-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate one-rank fault smoke and fix S3 stage-out permission before measurement |
-| 9 | `EXP-09-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate distributed fault smoke and fix S3 stage-out permission before measurement |
+| 3 | `EXP-02-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate one-GPU smoke before measurement |
+| 4 | `EXP-02-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate DDP smoke before measurement |
+| 5 | `EXP-07-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate one-rank smoke before measurement |
+| 6 | `EXP-07-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate DDP smoke before measurement |
+| 7 | `EXP-08-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate DDP/FSDP smoke before measurement |
+| 8 | `EXP-09-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate one-rank fault smoke before measurement |
+| 9 | `EXP-09-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate distributed fault smoke before measurement |
 
 Use separate exact-size Runpod sessions after local preparation is complete:
 

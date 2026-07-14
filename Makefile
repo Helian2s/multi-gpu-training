@@ -7,17 +7,31 @@ NEMO_IMAGE ?= multi-gpu-training-nemo:local
 VCS_REF ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 AWS_EXP01_CONFIG ?= infra/aws/exp01_qualification.yaml
+AWS_A1_CONFIG ?= infra/aws/a1_qualification.yaml
 AWS_EXP01_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
 AWS_EXP01_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 AWS_EXP01_HOLD_ARG = $(if $(HOLD_OPEN_ON_EXIT),--hold-open-on-exit,)
+AWS_A1_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
+AWS_A1_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
+AWS_A1_HOLD_ARG = $(if $(HOLD_OPEN_ON_EXIT),--hold-open-on-exit,)
 
-.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a2-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts
+.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a2-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts aws-a1-preflight aws-a1-launch-dry-run aws-a1-status aws-a1-host-shell aws-a1-container-shell aws-a1-host-command aws-a1-container-command aws-a1-logs aws-a1-monitor aws-a1-artifacts
 
 help:
 	@echo "make check"
 	@echo "make build-pytorch-image [PYTORCH_IMAGE=multi-gpu-training-pytorch:local]"
 	@echo "make build-nemo-image [NEMO_IMAGE=multi-gpu-training-nemo:local]"
 	@echo "make aws-ssm-plugin-check"
+	@echo "make aws-a1-preflight"
+	@echo "make aws-a1-launch-dry-run [RUN_ID=...] [HOLD_OPEN_ON_EXIT=1]"
+	@echo "make aws-a1-status"
+	@echo "make aws-a1-host-shell [INSTANCE_ID=...]"
+	@echo "make aws-a1-container-shell [INSTANCE_ID=...] [RUN_ID=...]"
+	@echo "make aws-a1-host-command CMD='...' [INSTANCE_ID=...]"
+	@echo "make aws-a1-container-command CMD='...' [INSTANCE_ID=...] [RUN_ID=...]"
+	@echo "make aws-a1-logs [INSTANCE_ID=...]"
+	@echo "make aws-a1-monitor [INSTANCE_ID=...]"
+	@echo "make aws-a1-artifacts"
 	@echo "make aws-exp01-preflight"
 	@echo "make aws-exp01-launch-dry-run [RUN_ID=...] [HOLD_OPEN_ON_EXIT=1]"
 	@echo "make aws-exp01-status"
@@ -82,11 +96,43 @@ build-nemo-image:
 aws-exp01-preflight:
 	$(PYTHON) infra/aws/exp01_preflight.py --config "$(AWS_EXP01_CONFIG)"
 
+aws-a1-preflight:
+	$(PYTHON) infra/aws/exp01_preflight.py --config "$(AWS_A1_CONFIG)"
+
 aws-ssm-plugin-check:
 	@command -v session-manager-plugin >/dev/null 2>&1 && session-manager-plugin --version || (echo "session-manager-plugin is not installed; interactive SSM shell targets need it"; exit 2)
 
 aws-exp01-launch-dry-run:
 	$(PYTHON) infra/aws/exp01_launch.py --config "$(AWS_EXP01_CONFIG)" $(AWS_EXP01_RUN_ARG) $(AWS_EXP01_HOLD_ARG)
+
+aws-a1-launch-dry-run:
+	$(PYTHON) infra/aws/exp01_launch.py --config "$(AWS_A1_CONFIG)" $(AWS_A1_RUN_ARG) $(AWS_A1_HOLD_ARG)
+
+aws-a1-status:
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" status
+
+aws-a1-host-shell:
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" $(AWS_A1_INSTANCE_ARG) shell
+
+aws-a1-container-shell:
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" $(AWS_A1_INSTANCE_ARG) $(AWS_A1_RUN_ARG) container-shell
+
+aws-a1-host-command:
+	@test -n "$(CMD)" || (echo "CMD is required, for example CMD='nvidia-smi'"; exit 2)
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" $(AWS_A1_INSTANCE_ARG) command --shell-command '$(CMD)'
+
+aws-a1-container-command:
+	@test -n "$(CMD)" || (echo "CMD is required, for example CMD='python -c \"import torch; print(torch.cuda.device_count())\"'"; exit 2)
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" $(AWS_A1_INSTANCE_ARG) $(AWS_A1_RUN_ARG) container-command --shell-command '$(CMD)'
+
+aws-a1-logs:
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" $(AWS_A1_INSTANCE_ARG) logs
+
+aws-a1-monitor:
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" $(AWS_A1_INSTANCE_ARG) monitor
+
+aws-a1-artifacts:
+	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" artifacts
 
 aws-exp01-status:
 	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_EXP01_CONFIG)" status

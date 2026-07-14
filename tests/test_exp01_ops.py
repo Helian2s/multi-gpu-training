@@ -20,6 +20,10 @@ class Exp01OpsTest(unittest.TestCase):
 
     def test_container_name_matches_launcher_contract(self):
         self.assertEqual(container_name("20260714T041113Z"), "exp01-20260714T041113Z")
+        self.assertEqual(
+            container_name("20260714T041113Z", {"container": {"name_prefix": "qual-a1"}}),
+            "qual-a1-20260714T041113Z",
+        )
 
 
 if __name__ == "__main__":

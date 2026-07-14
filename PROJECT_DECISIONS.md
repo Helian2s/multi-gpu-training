@@ -145,6 +145,13 @@ The NeMo container is itself based on NVIDIA's optimized PyTorch stack; these
 are two experiment environments, not containers that manage one another. Each
 experiment runs in exactly one selected image.
 
+AWS-A1 and AWS-A2 PyTorch work use the same AWS PyTorch runtime image when the
+software stack is identical. The EC2 profile, visible GPU count, qualification
+smoke, and measured workload are selected by provider configuration and
+run-unit arguments, not by baking separate A1/A2 images. Create a new PyTorch
+image only when source, dependencies, profiler tooling, or runtime contracts
+change.
+
 Images are built once locally with Docker Buildx or by GitHub Actions and pushed
 to private Amazon ECR in `us-west-2` and to GHCR in the same build workflow.
 AWS pulls from ECR through a least-privilege instance role; Runpod pulls the
@@ -906,6 +913,26 @@ timestamps were not captured; no earlier chronology is implied by their IDs.
 - **Consequences:** Active configs, tests, catalog rows, run-unit tables, and
   AWS operator docs use `AWS-A*` names. A one-visible-GPU phase on `AWS-A2`
   remains a two-GPU billed host and must not be reported as an `AWS-A1` result.
+
+### PD-025 — Share the AWS PyTorch image across AWS-A1 and AWS-A2
+
+- **Recorded:** 2026-07-14
+- **Status:** Accepted
+- **Supersedes:** No prior decision; clarifies the active container strategy
+  for AWS G7e PyTorch work.
+- **Decision:** Use one immutable AWS PyTorch image for AWS-A1 and AWS-A2 runs
+  whenever the software stack is the same. Select A1 versus A2 behavior through
+  provider configuration, run units, visible-GPU masks, and container command
+  mode. Do not create separate A1/A2 images merely because the EC2 instance
+  type or visible GPU count differs.
+- **Rationale:** A shared image keeps software content identical across AWS
+  one-GPU and two-GPU runs, reduces rebuilds and registry churn, and makes
+  differences attributable to hardware profile, GPU visibility, and workload
+  configuration rather than accidental image drift.
+- **Consequences:** Image digests remain tied to software state, not compute
+  profile. Qualification and experiment commands may have separate modes inside
+  the same image. A new PyTorch image is required only when source,
+  dependencies, profiler tooling, or runtime contracts change.
 
 ## Primary references
 

@@ -69,6 +69,10 @@ Official sources:
   and container runtime; workloads pull the project image from private ECR.
 - **Framework placement:** AWS measured training uses the PyTorch image; all
   NeMo/Megatron experiments are assigned to Runpod A100 SXM profiles.
+- **AWS PyTorch image:** AWS-A1 and AWS-A2 share one immutable PyTorch image
+  whenever the software stack is identical. Launch config selects the compute
+  profile, visible GPU mask, and qualification or experiment command; separate
+  A1/A2 images are not created solely for instance-size differences.
 - **Identity:** an instance IAM role with only the S3 and management permissions
   required by the implemented lifecycle plus ECR pull-only access.
 - **Durable storage:** versioned S3 prefixes for pinned inputs and complete run
@@ -108,6 +112,27 @@ Run it locally with:
 ```bash
 make aws-exp01-preflight
 ```
+
+`QUAL-A1` has a separate launch-disabled qualification config for the one-GPU
+AWS-A1 track:
+
+```bash
+make aws-a1-preflight
+make aws-a1-launch-dry-run HOLD_OPEN_ON_EXIT=1
+make aws-a1-status
+make aws-a1-monitor
+make aws-a1-logs
+```
+
+The A1 dry run validates the `g7e.2xlarge` request without creating an
+instance. S3 stage-out is approved for `artifacts/QUAL-A1/` through
+`FinetuningGpuS3Access` default version `v5`; EXP-03/04/05/06 prefixes are not
+granted while those experiments remain proposed. The shared PyTorch image ECR
+scan disposition is recorded for short-lived qualification smoke runs only. A
+real A1 smoke launch remains blocked until the launch is explicitly confirmed.
+If an A1 host is running in hold-open mode, the A1 host/container command and
+shell targets mirror the EXP-01 helpers but use the
+`qual-a1-${RUN_ID}` container name.
 
 The current recorded EXP-01 host and image are:
 

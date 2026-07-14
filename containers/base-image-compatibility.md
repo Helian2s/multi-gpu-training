@@ -112,14 +112,31 @@ Git commit `98ed22f8e54a` and published to ECR for AWS-side qualification.
 | Image family | Local tag | ECR tag | ECR digest | Pushed | Scan state |
 | --- | --- | --- | --- | --- | --- |
 | PyTorch EXP-01 | `multi-gpu-training-pytorch:exp01-20260714-98ed22f` | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:exp01-20260714-98ed22f` | `sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c` | `2026-07-14T01:14:55Z` | `COMPLETE`: 60 critical, 178 high, 236 medium, 14 low, 4 undefined |
-| PyTorch EXP-01 replacement | `multi-gpu-training-pytorch:exp01-scriptfix-f08a362` | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:exp01-20260714-f08a362` | `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f` | `2026-07-14T16:20:36Z` | `IN_PROGRESS` when recorded |
+| PyTorch EXP-01 replacement | `multi-gpu-training-pytorch:exp01-scriptfix-f08a362` | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:exp01-20260714-f08a362` | `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f` | `2026-07-14T16:20:36Z` | `COMPLETE`: 62 critical, 178 high, 248 medium, 16 low, 4 undefined |
+| Shared AWS PyTorch | `multi-gpu-training-pytorch:a2-prep-b328fa3bed00` | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:a2-prep-b328fa3bed00` | `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8` | `2026-07-14T20:28:01Z` | `COMPLETE`: 62 critical, 178 high, 248 medium, 16 low, 4 undefined |
 
-The image status was `ACTIVE` after push. ECR scan-on-push reported the same
-severity counts as the earlier PyTorch publication smoke test, indicating the
-findings are inherited from the current NVIDIA-derived base stack and still
-need recorded review. A local smoke check confirmed `p2pBandwidthLatencyTest`
-and `all_reduce_perf` are on `PATH`; executing the CUDA sample still fails
-locally with the expected missing/insufficient CUDA driver error.
+The image status was `ACTIVE` after push. ECR scan-on-push findings for the
+replacement and shared AWS PyTorch images are package-level findings in the
+NVIDIA-derived Ubuntu/runtime stack, with sampled Critical/High packages
+including `linux-libc-dev`, `curl`/`libcurl`, `gnutls`, `openssl`,
+`python3.12`, `vim`, `python-pip`, `libxml2`, and `rapidjson`. The scan does
+not report findings in this repository's Python source code, but it is also not
+a source-code security audit.
+
+Disposition for AWS qualification smoke on 2026-07-14: use of the shared AWS
+PyTorch digest
+`sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8` is
+accepted for short-lived `QUAL-A1`/`QUAL-A2` smoke runs only, under the current
+controls: private ECR, no-ingress security group, SSM-only operator access,
+least-privilege ECR pull and scoped S3 artifact permissions, no production
+traffic, no long-running service, and automatic stop/termination guards.
+Measured experiment runs still require either a rebuilt/refreshed image with
+reviewed scan results or an explicit measured-run exception recorded before
+launch.
+
+A local smoke check confirmed `p2pBandwidthLatencyTest` and `all_reduce_perf`
+are on `PATH`; executing the CUDA sample still fails locally with the expected
+missing/insufficient CUDA driver error.
 
 The first EC2 launch using the `98ed22f` digest pulled successfully through
 `FinetuningGpuInstanceRole` and validated the G7e host driver/GPU visibility,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator helpers for an already-running EXP-01 EC2 instance.
+"""Operator helpers for an already-running AWS qualification/experiment EC2 instance.
 
 These commands are intentionally limited to inspection and manual interaction.
 They do not launch, stop, or terminate EC2 instances.
@@ -32,16 +32,16 @@ class OpsError(RuntimeError):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--instance-id", default="", help="Override automatic EXP-01 instance selection.")
+    parser.add_argument("--instance-id", default="", help="Override automatic instance selection.")
     parser.add_argument("--run-id", default="", help="Override run ID for container helpers.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("status", help="List matching EXP-01 EC2 instances and SSM state.")
+    subparsers.add_parser("status", help="List matching EC2 instances and SSM state.")
     subparsers.add_parser("shell", help="Open an interactive SSM shell on the host.")
-    subparsers.add_parser("container-shell", help="Open an interactive shell in the EXP-01 container.")
+    subparsers.add_parser("container-shell", help="Open an interactive shell in the run container.")
     subparsers.add_parser("logs", help="Collect key host, Docker, cloud-init, and experiment logs.")
     subparsers.add_parser("monitor", help="Collect a one-shot host/GPU/Docker monitoring snapshot.")
-    subparsers.add_parser("artifacts", help="List EXP-01 S3 run artifacts.")
+    subparsers.add_parser("artifacts", help="List S3 run artifacts for the configured run unit.")
 
     host_command = subparsers.add_parser("command", help="Run a non-interactive shell command on the host.")
     host_command.add_argument("--shell-command", "-c", required=True)
@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
 
     container_command = subparsers.add_parser(
         "container-command",
-        help="Run a non-interactive shell command inside the EXP-01 container.",
+        help="Run a non-interactive shell command inside the run container.",
     )
     container_command.add_argument("--shell-command", "-c", required=True)
     container_command.add_argument("--timeout-seconds", type=int, default=600)
@@ -110,6 +110,10 @@ def exp01_instance_filters(config: dict[str, Any], states: list[str]) -> list[st
     ]
 
 
+def experiment_label(config: dict[str, Any]) -> str:
+    return str(config.get("experiment_id") or config["safety"]["required_tags"]["Experiment"])
+
+
 def matching_instances(config: dict[str, Any], states: list[str]) -> list[dict[str, Any]]:
     data = aws_json(
         config,
@@ -154,10 +158,10 @@ def select_running_instance(config: dict[str, Any], instance_id: str = "") -> di
 
     instances = matching_instances(config, ["running"])
     if not instances:
-        raise OpsError("no running EXP-01 instance found")
+        raise OpsError(f"no running {experiment_label(config)} instance found")
     if len(instances) > 1:
         ids = ", ".join(instance["InstanceId"] for instance in instances)
-        raise OpsError(f"multiple running EXP-01 instances found; pass INSTANCE_ID=... ({ids})")
+        raise OpsError(f"multiple running {experiment_label(config)} instances found; pass INSTANCE_ID=... ({ids})")
     return instances[0]
 
 
@@ -171,8 +175,10 @@ def instance_run_id(instance: dict[str, Any], override: str = "") -> str:
     return run_id
 
 
-def container_name(run_id: str) -> str:
-    return f"exp01-{run_id}"
+def container_name(run_id: str, config: dict[str, Any] | None = None) -> str:
+    container = (config or {}).get("container") or {}
+    prefix = container.get("name_prefix", "exp01")
+    return f"{prefix}-{run_id}"
 
 
 def ssm_ping_status(config: dict[str, Any], instance_ids: list[str]) -> dict[str, str]:
@@ -198,7 +204,7 @@ def render_status(config: dict[str, Any]) -> None:
     instances = matching_instances(config, ["pending", "running", "stopping", "stopped"])
     ssm_status = ssm_ping_status(config, [instance["InstanceId"] for instance in instances])
     if not instances:
-        print("No EXP-01 instances found.")
+        print(f"No {experiment_label(config)} instances found.")
         return
 
     print("InstanceId State SSM InstanceType AZ RunId LaunchTime")
@@ -302,8 +308,9 @@ def start_session(config: dict[str, Any], instance_id: str, command: str = "") -
     return completed.returncode
 
 
-def host_logs_command() -> str:
-    return r"""
+def host_logs_command(config: dict[str, Any]) -> str:
+    label = experiment_label(config)
+    return rf"""
 set -uo pipefail
 echo "== host =="
 date -u
@@ -331,10 +338,10 @@ echo
 echo "== docker images =="
 sudo docker images || true
 echo
-echo "== exp01 run tree =="
-sudo find /opt/multi-gpu-training/artifacts/runs/EXP-01 -maxdepth 4 -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' 2>/dev/null | sort | tail -80 || true
+echo "== {label} run tree =="
+sudo find /opt/multi-gpu-training/artifacts/runs/{label} -maxdepth 4 -type f -printf '%TY-%Tm-%Td %TH:%TM %s %p\n' 2>/dev/null | sort | tail -80 || true
 echo
-echo "== exp01 user-data log =="
+echo "== user-data log =="
 sudo tail -n 240 /var/log/exp01-user-data.log 2>/dev/null || true
 echo
 echo "== cloud-init output =="
@@ -415,7 +422,7 @@ def main() -> int:
             return start_session(
                 config,
                 instance_id,
-                command=f"sudo docker exec -it {container_name(run_id)} bash",
+                command=f"sudo docker exec -it {container_name(run_id, config)} bash",
             )
         if args.command == "command":
             return send_ssm_command(
@@ -423,12 +430,12 @@ def main() -> int:
                 instance_id,
                 [args.shell_command],
                 args.timeout_seconds,
-                "EXP-01 manual host command",
+                f"{experiment_label(config)} manual host command",
             )
         if args.command == "container-command":
             run_id = instance_run_id(instance, args.run_id)
             command = (
-                f"sudo docker exec {container_name(run_id)} "
+                f"sudo docker exec {container_name(run_id, config)} "
                 f"bash -lc {shlex.quote(args.shell_command)}"
             )
             return send_ssm_command(
@@ -436,15 +443,15 @@ def main() -> int:
                 instance_id,
                 [command],
                 args.timeout_seconds,
-                "EXP-01 manual container command",
+                f"{experiment_label(config)} manual container command",
             )
         if args.command == "logs":
             return send_ssm_command(
                 config,
                 instance_id,
-                [host_logs_command()],
+                [host_logs_command(config)],
                 600,
-                "EXP-01 host logs",
+                f"{experiment_label(config)} host logs",
             )
         if args.command == "monitor":
             return send_ssm_command(
@@ -452,7 +459,7 @@ def main() -> int:
                 instance_id,
                 [monitor_command()],
                 300,
-                "EXP-01 monitor snapshot",
+                f"{experiment_label(config)} monitor snapshot",
             )
     except OpsError as error:
         print(str(error), file=sys.stderr)

@@ -1,0 +1,167 @@
+schema_version: 1
+experiment_id: QUAL-A1
+description: AWS-A1 one-GPU host, image, storage, SSM, and CUDA smoke qualification.
+
+aws:
+  profile: finetuning-local
+  account_id: "037678282394"
+  region: us-west-2
+
+compute:
+  profile: AWS-A1
+  instance_type: g7e.2xlarge
+  expected_vcpus: 8
+  expected_physical_gpus: 1
+  expected_gpu_name: RTX PRO Server 6000
+  purchase_option: on-demand
+
+host:
+  ami_id: ami-04b4c34375925db5f
+  ami_name: Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) 20260710
+  root_device_name: /dev/sda1
+  root_volume_gib: 120
+  root_volume_type: gp3
+  root_volume_encrypted: true
+
+cache_volume:
+  enabled: true
+  volume_id: vol-0746f5d3a6d2cd859
+  availability_zone: us-west-2d
+  volume_ids_by_az:
+    us-west-2a: vol-052b8f4246bd0d909
+    us-west-2b: vol-055b18a2e1e5fdf79
+    us-west-2c: vol-0189cec8b1c5bb224
+    us-west-2d: vol-0746f5d3a6d2cd859
+  size_gib: 300
+  volume_type: gp3
+  encrypted: true
+  device_name: /dev/sdf
+  mount_point: /mnt/aws-cache
+  filesystem: ext4
+  docker_data_root: /mnt/aws-cache/docker
+  initialize_if_empty: true
+  delete_on_termination: false
+
+image:
+  registry: 037678282394.dkr.ecr.us-west-2.amazonaws.com
+  repository: multi-gpu-training-pytorch
+  tag: a2-prep-b328fa3bed00
+  digest: sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8
+
+container:
+  name_prefix: qual-a1
+  cuda_visible_devices: "0"
+  command:
+    - bash
+    - -lc
+    - |
+      set -euo pipefail
+      mkdir -p "${RUN_DIR}/raw" "${RUN_DIR}/metrics"
+      exec > >(tee "${RUN_DIR}/raw/qual-a1-smoke.log") 2>&1
+
+      echo "QUAL-A1 smoke started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      echo "RUN_ID=${RUN_ID}"
+      echo "RUN_DIR=${RUN_DIR}"
+      env | sort > "${RUN_DIR}/raw/environment.txt"
+
+      for required in nvidia-smi all_reduce_perf python3; do
+        if ! command -v "${required}" >/dev/null 2>&1; then
+          echo "missing required command: ${required}" >&2
+          exit 2
+        fi
+      done
+
+      nvidia-smi -L | tee "${RUN_DIR}/raw/nvidia-smi-L.txt"
+      nvidia-smi --query-gpu=index,name,uuid,pci.bus_id,driver_version,memory.total \
+        --format=csv | tee "${RUN_DIR}/raw/nvidia-smi-gpu-query.csv"
+
+      python3 - <<'PY' | tee "${RUN_DIR}/raw/python-runtime.json"
+      import json
+      import os
+      import torch
+
+      payload = {
+          "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+          "torch_version": torch.__version__,
+          "torch_cuda": torch.version.cuda,
+          "cuda_available": torch.cuda.is_available(),
+          "device_count": torch.cuda.device_count(),
+          "devices": [
+              {
+                  "index": idx,
+                  "name": torch.cuda.get_device_name(idx),
+                  "capability": torch.cuda.get_device_capability(idx),
+              }
+              for idx in range(torch.cuda.device_count())
+          ],
+      }
+      print(json.dumps(payload, indent=2, sort_keys=True))
+      if payload["device_count"] != 1:
+          raise SystemExit(f"expected exactly 1 CUDA device, got {payload['device_count']}")
+      PY
+
+      all_reduce_perf \
+        --ngpus 1 \
+        --minbytes 8 \
+        --maxbytes 16777216 \
+        --stepfactor 2 \
+        --warmup_iters 5 \
+        --iters 20 \
+        --check 1 \
+        --timeout 300 \
+        --average 1 \
+        --report_cputime 1 \
+        2>&1 | tee "${RUN_DIR}/raw/nccl_all_reduce_1gpu.txt"
+
+      cat > "${RUN_DIR}/manifest.json" <<EOF
+      {
+        "run_unit": "QUAL-A1",
+        "run_id": "${RUN_ID}",
+        "created_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "visible_gpu_count": 1,
+        "raw_dir": "${RUN_DIR}/raw",
+        "metrics_dir": "${RUN_DIR}/metrics"
+      }
+      EOF
+
+      echo "QUAL-A1 smoke finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+identity:
+  instance_profile: FinetuningGpuInstanceRole
+  role_name: FinetuningGpuInstanceRole
+
+artifacts:
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/QUAL-A1/
+
+network:
+  vpc_id: vpc-0480da876d161ad22
+  auto_select_subnet: true
+  subnet_ids:
+    - subnet-0e99f5711b201d98e # us-west-2d, default public subnet
+    - subnet-0e52a0c3ae6a086e8 # us-west-2c, default public subnet
+    - subnet-0c7c33d276fe5f654 # us-west-2a, default public subnet
+    - subnet-0d50d4374d2149a57 # us-west-2b, default public subnet
+  security_group_ids:
+    - sg-0797f3b8520d4efa9 # ft-exp00-ssm-only; no ingress, all egress
+  associate_public_ip_address: true
+  ssh_key_name: null
+
+budget:
+  maximum_instance_hours: 1.0
+  maximum_provider_cost_usd: 4.0
+
+safety:
+  launch_enabled: false
+  require_explicit_launch_confirmation: true
+  maximum_lifetime_minutes: 60
+  post_run_inspection_minutes: 15
+  instance_initiated_shutdown_behavior: terminate
+  manual_instance_initiated_shutdown_behavior: stop
+  metadata_options:
+    http_endpoint: enabled
+    http_tokens: required
+    instance_metadata_tags: enabled
+  required_tags:
+    Project: NCP-GENL
+    Experiment: QUAL-A1
+    ManagedBy: codex-aws-a1-launch
