@@ -32,7 +32,7 @@ RUN git init /tmp/cuda-samples && \
 WORKDIR /workspace/multi-gpu-training
 
 COPY containers/pytorch/requirements-runtime.txt /tmp/requirements-runtime.txt
-RUN python -m pip install --no-cache-dir -r /tmp/requirements-runtime.txt && \
+RUN python -m pip install --no-cache-dir --ignore-installed -r /tmp/requirements-runtime.txt && \
     rm /tmp/requirements-runtime.txt
 
 COPY common/ common/
