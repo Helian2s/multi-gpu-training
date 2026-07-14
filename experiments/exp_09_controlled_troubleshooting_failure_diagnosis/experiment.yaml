@@ -9,7 +9,7 @@ experiment:
 
 stack:
   family: pytorch
-  image: null # Rebuild and publish the PyTorch image from accepted source before launch.
+  image: 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8
 
 hardware:
   compute_profile: AWS-A2

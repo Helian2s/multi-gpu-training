@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 from common.experiment_runner import (
     build_plan,
     configured_variants,
@@ -43,7 +45,7 @@ class ExperimentRunnerContractTest(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "unknown variant"):
             select_variants(configured_variants(config), variant_ids=["missing"])
 
-    def test_builds_dry_run_plan_without_image_digest(self) -> None:
+    def test_builds_dry_run_plan_with_image_digest(self) -> None:
         config = load_yaml(EXP08_CONFIG)
         selected = select_variants(configured_variants(config), run_units=["EXP-08-A2V2"])
         output_root = resolve_output_root(EXP08_CONFIG, config, None)
@@ -58,7 +60,8 @@ class ExperimentRunnerContractTest(unittest.TestCase):
 
         self.assertEqual(plan["experiment_id"], "EXP-08")
         self.assertEqual(plan["run_units"], ["EXP-08-A2V2"])
-        self.assertFalse(plan["image_ready"])
+        self.assertTrue(plan["image_ready"])
+        self.assertIn("@sha256:", plan["image"])
         self.assertEqual(plan["variant_count"], 4)
 
     def test_write_plan_creates_manifest(self) -> None:
@@ -81,14 +84,25 @@ class ExperimentRunnerContractTest(unittest.TestCase):
 
     def test_runner_execute_fails_closed_without_image_digest(self) -> None:
         stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            with self.assertRaises(SystemExit) as raised:
-                runner_main(
-                    experiment="EXP-08",
-                    default_config=EXP08_CONFIG,
-                    description="test runner",
-                    argv=["--execute", "--variant", "EXP-08-A2V2-ddp-replicated-baseline"],
-                )
+        config = load_yaml(EXP08_CONFIG)
+        config["stack"]["image"] = None
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            config_path = Path(temporary_directory) / "experiment.yaml"
+            config_path.write_text(
+                yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+            )
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as raised:
+                    runner_main(
+                        experiment="EXP-08",
+                        default_config=config_path,
+                        description="test runner",
+                        argv=[
+                            "--execute",
+                            "--variant",
+                            "EXP-08-A2V2-ddp-replicated-baseline",
+                        ],
+                    )
 
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("immutable digest", stderr.getvalue())
@@ -111,4 +125,3 @@ class ExperimentRunnerContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

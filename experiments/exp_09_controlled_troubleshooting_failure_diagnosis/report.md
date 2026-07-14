@@ -15,7 +15,7 @@ No measured runs yet.
 
 Planned environment: AWS `g7e.12xlarge` through profile `AWS-A2`, one- and
 two-visible-GPU phases on the same physical host profile, pinned PyTorch image
-digest to be recorded after the next accepted-source rebuild and ECR push.
+`037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`.
 
 ## Method
 
@@ -34,8 +34,8 @@ recovery proof.
 
 ## Limitations and anomalies
 
-Known pre-run limitation: EXP-09 has a measured executor, but it has not been
-validated on GPU and does not yet have a recorded image digest.
+Known pre-run limitation: EXP-09 has a measured executor and recorded ECR image
+digest, but it has not been validated on GPU.
 
 ## Cost
 
@@ -47,4 +47,4 @@ Pending measured result.
 
 ## Reproduction
 
-Pending GPU smoke validation and immutable image publication.
+Pending GPU smoke validation.

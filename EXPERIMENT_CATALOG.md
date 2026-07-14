@@ -1082,13 +1082,13 @@ experiments have already been accepted and implemented.
 | ---: | --- | ---: | --- | --- |
 | 1 | `QUAL-A2` | 1, 2 | in preparation | Fixed-image pull, cache-volume mount, SSM access, Docker root validation, topology capture, P2P smoke, NCCL smoke, and visibility-mask smoke for `V1` and `V2` |
 | 2 | `EXP-01-A2` | 2 | accepted, in preparation | Use ECR image digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`; stage out `artifacts/EXP-01/`; keep the instance available for the agreed manual inspection window |
-| 3 | `EXP-02-A2V1` | 1 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate GPU smoke |
-| 4 | `EXP-02-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate DDP smoke |
-| 5 | `EXP-07-A2V1` | 1 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate one-rank smoke |
-| 6 | `EXP-07-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate DDP smoke |
-| 7 | `EXP-08-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate DDP/FSDP smoke |
-| 8 | `EXP-09-A2V1` | 1 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate one-rank fault smoke |
-| 9 | `EXP-09-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate distributed fault smoke |
+| 3 | `EXP-02-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate GPU smoke and fix S3 stage-out permission before measurement |
+| 4 | `EXP-02-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate DDP smoke and fix S3 stage-out permission before measurement |
+| 5 | `EXP-07-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate one-rank smoke and fix S3 stage-out permission before measurement |
+| 6 | `EXP-07-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate DDP smoke and fix S3 stage-out permission before measurement |
+| 7 | `EXP-08-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate DDP/FSDP smoke and fix S3 stage-out permission before measurement |
+| 8 | `EXP-09-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate one-rank fault smoke and fix S3 stage-out permission before measurement |
+| 9 | `EXP-09-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; validate distributed fault smoke and fix S3 stage-out permission before measurement |
 
 Use separate exact-size Runpod sessions after local preparation is complete:
 
