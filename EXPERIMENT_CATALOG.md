@@ -63,7 +63,7 @@ do not become project decisions until they are promoted to that file.
 - Small enough for full training steps on one qualified 48-96 GB primary GPU,
   making one-GPU baselines possible.
 - Large enough to produce meaningful compute, memory, and communication traces
-  on two and four GPUs.
+  on two visible GPUs and the four-rank Runpod hybrid.
 - Structurally suitable for the proposed parallel degrees: 28 transformer
   layers, 16 query heads, and 8 key/value heads permit the principal TP and PP
   divisions used in this catalog.
@@ -273,11 +273,17 @@ distributed-training framework.
 These are accepted placements, not evidence that capacity is available. Every
 session must still pass the mandatory qualification and cost gate.
 
+AWS profile names are project aliases, not AWS product names. `AWS-A1`,
+`AWS-A2`, and `AWS-A4` mean AWS G7e profiles with one, two, and four physical
+GPUs respectively. The digit records the billed physical GPU count; a run-unit
+suffix such as `A2V1` or `A2V2` records how many GPUs are visible inside a
+two-GPU `AWS-A2` host.
+
 | Profile | Provider resource | Physical GPUs | Normal visible GPUs | Purpose |
 | --- | --- | ---: | ---: | --- |
-| `AWS-G7E-1` | AWS `us-west-2`, On-Demand `g7e.2xlarge` | 1 x RTX PRO 6000 Blackwell Server Edition 96 GB | 1 | One-GPU correctness, kernel, memory, and scaling baseline |
-| `AWS-G7E-2` | AWS `us-west-2`, On-Demand `g7e.12xlarge` | 2 x RTX PRO 6000 Blackwell Server Edition 96 GB | 2 | Two-rank distributed runs |
-| `AWS-G7E-4` | AWS `us-west-2`, On-Demand `g7e.24xlarge` | 4 x RTX PRO 6000 Blackwell Server Edition 96 GB | 4 | EXP-07 four-rank DDP sub-run; consumes all 96 approved vCPUs |
+| `AWS-A1` | AWS `us-west-2`, On-Demand `g7e.2xlarge` | 1 x RTX PRO 6000 Blackwell Server Edition 96 GB | 1 | One-GPU correctness, kernel, memory, and profiling runs that are not batched into AWS-A2 |
+| `AWS-A2` | AWS `us-west-2`, On-Demand `g7e.12xlarge` | 2 x RTX PRO 6000 Blackwell Server Edition 96 GB | 1 or 2 by visibility mask | Current AWS-A2 queue, including one-visible-GPU baselines and two-rank distributed runs |
+| `AWS-A4` | AWS `us-west-2`, On-Demand `g7e.24xlarge` | 4 x RTX PRO 6000 Blackwell Server Edition 96 GB | 4 | Not in the current AWS queue; consumes all 96 approved vCPUs and requires a new decision before use |
 | `RUNPOD-A100-SXM2` | Runpod Secure Cloud Pod, 2 x `NVIDIA A100-SXM4-80GB` | 2 x A100 80 GB SXM | 1 or 2 by visibility mask | Two-GPU NVLink measurements and all one-/two-rank NeMo/Megatron work |
 | `RUNPOD-A100-SXM4` | Runpod Secure Cloud Pod, 4 x `NVIDIA A100-SXM4-80GB` | 4 x A100 80 GB SXM | 4 | The single four-rank hybrid TP=2 x DP=2 experiment |
 
@@ -289,37 +295,39 @@ pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 
 | ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
 | --- | --- | --- | ---: | --- | ---: | --- |
-| EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-G7E-2` | 1.5-3.0 | accepted |
-| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-G7E-1`; bounded AWS `AWS-G7E-2` DDP check | 1.0-2.0 | proposed |
-| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
-| EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-G7E-1` | 0.5-1.0 | proposed |
-| EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
-| EXP-06 | Profiler triangulation | PyTorch/NVIDIA tools | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
-| EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2, 4 | AWS `AWS-G7E-1/2/4` | 4.0-8.0 | proposed |
-| EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-G7E-2` | 1.0-2.0 | proposed |
-| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-G7E-1`; AWS `AWS-G7E-2` for distributed faults only | 1.5-3.0 | proposed |
+| EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-A2` | 1.5-3.0 | accepted |
+| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.0-2.0 | proposed |
+| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
+| EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-A1` | 0.5-1.0 | proposed |
+| EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
+| EXP-06 | Profiler triangulation | PyTorch/NVIDIA tools | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
+| EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 2.0-4.0 | proposed |
+| EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-A2` | 1.0-2.0 | proposed |
+| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.5-3.0 | proposed |
 | EXP-10 | Runpod NVLink P2P and NCCL communication | NCCL/NVIDIA tools | 2 | Runpod `RUNPOD-A100-SXM2` | 1.5-3.0 | proposed |
 | EXP-11 | Tensor plus sequence parallelism | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 2.0-4.0 | proposed |
 | EXP-12 | Pipeline schedules and bubble size | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
 | EXP-13 | Context parallelism for long sequences | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
 | EXP-14 | TP=2 x DP=2 for model width and throughput | NeMo/Megatron | 4 | Runpod `RUNPOD-A100-SXM4` | 2.0-3.0 | proposed |
 
-The 14 core row estimates sum to 19.25-37.5 measured GPU-hours. First-time
+The 14 core row estimates sum to 17.25-33.5 measured GPU-hours. First-time
 debugging and profiler setup can make the billable total materially higher.
 
 These are **active experiment GPU-hours**, not necessarily provider-billed
-accelerator hours. Cost uses the complete EC2 instance or Runpod Pod. G7e offers
-exact one-, two-, and four-GPU sizes; another family may require paying for
-masked GPUs.
+accelerator hours. Cost uses the complete EC2 instance or Runpod Pod. A
+one-visible-GPU phase on `AWS-A2` still bills the complete two-GPU instance
+and is not equivalent to `AWS-A1`; reports must record both the physical
+profile and visible GPU count.
 
 The AWS phase intentionally keeps G7e as the normal family so precision,
 topology, memory, profiler, and communication observations stay within one GPU
-generation. Cost control should come from bounded run units, tightly gating the
-single four-GPU run, and deferring any non-required follow-up to a separate
-decision, not from silently switching to G6e, G6, G5, or another family. A
-cheaper family may be proposed only as an explicit contingency because it
-changes GPU architecture, memory size, interconnect behavior, supported
-precision paths, and often the exact GPU-count shape.
+generation. Cost control should come from batching required one- and two-visible
+GPU phases on acquired `AWS-A2` capacity, deferring non-required follow-up to
+a separate decision, and keeping the only current four-GPU run on Runpod
+EXP-14, not from silently switching to G6e, G6, G5, or another family. A cheaper
+family may be proposed only as an explicit contingency because it changes GPU
+architecture, memory size, interconnect behavior, supported precision paths,
+and often the exact GPU-count shape.
 
 Each numbered experiment has exactly one provider. A scale experiment may use
 sequential instance sizes from that provider, but every sub-run still uses one
@@ -331,15 +339,14 @@ hidden inside one experiment.
 
 Four GPUs are admitted only where two GPUs cannot test the hypothesis:
 
-- EXP-07 needs 1, 2, and 4 ranks to observe a second scaling step and identify
-  non-linear DDP efficiency loss; a single 1-to-2 comparison cannot establish a
-  scaling trend.
 - EXP-14 needs four ranks because non-trivial TP and DP groups of size two
   require `2 x 2 = 4` ranks.
 
-No other catalog experiment has a four-GPU run. Adding one requires an explicit
-hypothesis that cannot be answered with one or two GPUs and a project-decision
-update.
+No AWS catalog experiment currently has a four-GPU run. The former EXP-07 AWS-A4
+DDP point is outside the current plan because the AWS-A2 session answers the
+near-term communication-overlap question with less capacity risk. Adding an AWS
+four-GPU run requires an explicit hypothesis that cannot be answered with one
+or two visible GPUs and a project-decision update.
 
 ### AWS run-unit ID system
 
@@ -348,11 +355,14 @@ experiment directories, reports, and lifecycle status. AWS execution planning
 uses run-unit IDs to name concrete compute-profile sub-runs without renumbering
 the catalog:
 
-- `QUAL-A1`, `QUAL-A2`, and `QUAL-A4` are shared qualification run units for
-  one-, two-, and four-GPU AWS sessions. They are prerequisites, not
-  experiments.
-- `EXP-NN-A1`, `EXP-NN-A2`, and `EXP-NN-A4` are AWS run units for the same
-  canonical experiment on `AWS-G7E-1`, `AWS-G7E-2`, and `AWS-G7E-4`.
+- `QUAL-A1` and `QUAL-A2` are shared qualification run units for current AWS
+  sessions. They are prerequisites, not experiments.
+- `EXP-NN-A1` names a run unit on `AWS-A1`.
+- `EXP-NN-A2V1` and `EXP-NN-A2V2` name one- and two-visible-GPU phases on the
+  same physical `AWS-A2` profile. `EXP-01-A2` keeps the shorter form because
+  it is a two-GPU communication baseline with no one-visible-GPU phase.
+- `QUAL-A4` and `EXP-NN-A4` are not current queue IDs. They require a new
+  project decision before any AWS four-GPU launch work resumes.
 - A run unit appears in launch queues, artifact manifests, and report
   subsections. It does not create a separate experiment directory or change the
   parent experiment's `Status`.
@@ -364,22 +374,20 @@ Current AWS run units:
 
 | Run unit | Parent | Profile | Status | Purpose |
 | --- | --- | --- | --- | --- |
-| `QUAL-A1` | Shared AWS qualification | `AWS-G7E-1` | planned | One-GPU host, image, storage, SSM, and smoke-test qualification |
-| `QUAL-A2` | Shared AWS qualification | `AWS-G7E-2` | in preparation | Two-GPU host, image, storage, SSM, topology, P2P, and NCCL smoke qualification |
-| `QUAL-A4` | Shared AWS qualification | `AWS-G7E-4` | planned | Four-GPU host and runtime qualification before the gated DDP scaling run |
-| `EXP-01-A2` | EXP-01 | `AWS-G7E-2` | accepted, in preparation | AWS PCIe P2P and NCCL baseline |
-| `EXP-02-A1` | EXP-02 | `AWS-G7E-1` | proposed | Full precision and Tensor Core sweep |
-| `EXP-02-A2` | EXP-02 | `AWS-G7E-2` | proposed | Bounded two-rank DDP precision check after EXP-01-A2 |
-| `EXP-03-A1` | EXP-03 | `AWS-G7E-1` | proposed | Microbatch and accumulation sweep |
-| `EXP-04-A1` | EXP-04 | `AWS-G7E-1` | proposed | Activation checkpointing/recomputation sweep |
-| `EXP-05-A1` | EXP-05 | `AWS-G7E-1` | proposed | SDPA, FlashAttention, and fusion sweep |
-| `EXP-06-A1` | EXP-06 | `AWS-G7E-1` | proposed | Profiler triangulation |
-| `EXP-07-A1` | EXP-07 | `AWS-G7E-1` | proposed | DDP one-rank baseline |
-| `EXP-07-A2` | EXP-07 | `AWS-G7E-2` | proposed | DDP two-rank scaling point |
-| `EXP-07-A4` | EXP-07 | `AWS-G7E-4` | proposed | DDP four-rank scaling point |
-| `EXP-08-A2` | EXP-08 | `AWS-G7E-2` | proposed | FSDP/DDP memory and communication comparison |
-| `EXP-09-A1` | EXP-09 | `AWS-G7E-1` | proposed | One-rank failure and input-pipeline cases |
-| `EXP-09-A2` | EXP-09 | `AWS-G7E-2` | proposed | Distributed fault cases that require two ranks |
+| `QUAL-A1` | Shared AWS qualification | `AWS-A1` | planned | One-GPU host, image, storage, SSM, and smoke-test qualification |
+| `QUAL-A2` | Shared AWS qualification | `AWS-A2` | in preparation | Two-GPU host, one-/two-visible-GPU masks, image, storage, SSM, topology, P2P, and NCCL smoke qualification |
+| `EXP-01-A2` | EXP-01 | `AWS-A2` | accepted, in preparation | AWS PCIe P2P and NCCL baseline |
+| `EXP-02-A2V1` | EXP-02 | `AWS-A2`, one visible GPU | proposed | Full precision and Tensor Core sweep on the acquired AWS-A2 host |
+| `EXP-02-A2V2` | EXP-02 | `AWS-A2`, two visible GPUs | proposed | Bounded two-rank DDP precision check after EXP-01-A2 |
+| `EXP-03-A1` | EXP-03 | `AWS-A1` | proposed | Microbatch and accumulation sweep |
+| `EXP-04-A1` | EXP-04 | `AWS-A1` | proposed | Activation checkpointing/recomputation sweep |
+| `EXP-05-A1` | EXP-05 | `AWS-A1` | proposed | SDPA, FlashAttention, and fusion sweep |
+| `EXP-06-A1` | EXP-06 | `AWS-A1` | proposed | Profiler triangulation |
+| `EXP-07-A2V1` | EXP-07 | `AWS-A2`, one visible GPU | proposed | DDP one-rank baseline on the acquired AWS-A2 host |
+| `EXP-07-A2V2` | EXP-07 | `AWS-A2`, two visible GPUs | proposed | DDP two-rank scaling and communication-overlap point |
+| `EXP-08-A2V2` | EXP-08 | `AWS-A2`, two visible GPUs | proposed | FSDP/DDP memory and communication comparison |
+| `EXP-09-A2V1` | EXP-09 | `AWS-A2`, one visible GPU | proposed | One-rank failure and input-pipeline cases on the acquired AWS-A2 host |
+| `EXP-09-A2V2` | EXP-09 | `AWS-A2`, two visible GPUs | proposed | Distributed fault cases that require two ranks |
 
 ## Mandatory pre-run qualification
 
@@ -490,7 +498,7 @@ claiming that a named real company disclosed the incident.
 
 ### EXP-01: AWS PCIe P2P and NCCL communication
 
-**Planned compute:** AWS `AWS-G7E-2` only.
+**Planned compute:** AWS `AWS-A2` only.
 
 **Scenario (exam style):** A two-GPU EC2 training job scales poorly. The team
 must determine whether the GPUs have a working GPUDirect P2P path, establish the
@@ -517,11 +525,11 @@ EXP-07 and EXP-08.
 
 ### EXP-02: Mixed precision and Tensor Cores in distributed training
 
-**Planned compute:** `AWS-G7E-1` for the full precision and Tensor Core sweep.
-Use `AWS-G7E-2` for the bounded `EXP-02-A2` two-rank DDP check after the AWS
-communication baseline is qualified. `EXP-02-A2` tests the selected supported
-precision paths under DDP with constant effective global batch; it does not
-repeat every one-GPU precision and shape combination.
+**Planned compute:** AWS `AWS-A2` only. Run `EXP-02-A2V1` with one visible
+GPU for the full precision and Tensor Core sweep, then `EXP-02-A2V2` with two
+visible GPUs for a bounded DDP check after the AWS communication baseline is
+qualified. `EXP-02-A2V1` is billed as an AWS-A2 host and must not be reported
+as an exact one-GPU-instance measurement.
 
 **Scenario (exam style):** A financial-services company moves LLM training to a
 new NVIDIA GPU generation. FP32 training is stable but expensive, while an FP16
@@ -538,10 +546,10 @@ Scaling through Transformer Engine only after the pinned G7e image proves a
 native SM 12.0 path. Do not add MXFP8 or NVFP4 to the current G7e sweep. Also
 vary aligned versus deliberately misaligned matrix dimensions and use automatic
 mixed precision/gradient scaling where applicable. Include a GEMM
-microbenchmark, one-GPU transformer steps, and the same workload under two-GPU
-DDP with constant effective global batch. Record FP8 amax synchronization and
-the actual NCCL communication datatype/bytes rather than assuming FP8 compute
-automatically makes DDP gradient communication FP8.
+microbenchmark, one-visible-GPU transformer steps, and the same workload under
+two-visible-GPU DDP with constant effective global batch. Record FP8 amax
+synchronization and the actual NCCL communication datatype/bytes rather than
+assuming FP8 compute automatically makes DDP gradient communication FP8.
 
 **Measurements:** Throughput, kernel selection, Tensor Core activity, memory,
 loss/gradient difference from the FP32 reference, FP16 overflow behavior, DDP
@@ -568,7 +576,7 @@ changes the compute-to-communication balance in DDP.
 
 ### EXP-03: Microbatch, global batch, and gradient accumulation
 
-**Planned compute:** `AWS-G7E-1` only.
+**Planned compute:** `AWS-A1` only.
 
 **Scenario (exam style):** A retailer doubles its training GPU count but keeps
 the old microbatch and accumulation settings. Throughput improves, yet the
@@ -598,7 +606,7 @@ large batch unless loss normalization and synchronization are correct.
 
 ### EXP-04: Activation checkpointing/recomputation
 
-**Planned compute:** `AWS-G7E-1`.
+**Planned compute:** `AWS-A1`.
 
 **Scenario (exam style):** A legal-technology company can train its model at a
 4K-token context, but an 8K-token run OOMs. Buying more GPUs is possible but
@@ -620,7 +628,7 @@ trade-off than recomputing everything for many workloads.
 
 ### EXP-05: PyTorch SDPA/FlashAttention and operator fusion
 
-**Planned compute:** `AWS-G7E-1`.
+**Planned compute:** `AWS-A1`.
 
 **Scenario (exam style):** An AI startup's profiler shows thousands of short
 CUDA kernels separated by launch gaps, and eager attention materializes a large
@@ -668,7 +676,7 @@ backend sweep unless attention itself is the independent variable.
 
 ### EXP-06: Profiler triangulation
 
-**Planned compute:** `AWS-G7E-1`.
+**Planned compute:** `AWS-A1`.
 
 **Scenario (exam style):** A media company sees only 35% average GPU utilization
 during LLM training. One engineer suspects slow Python launches, another
@@ -692,12 +700,13 @@ objectives; this experiment teaches when each profiler is appropriate.
 
 ### EXP-07: DDP scaling and communication overlap
 
-**Planned compute:** AWS `AWS-G7E-1`, `AWS-G7E-2`, and `AWS-G7E-4` as
-sequential sub-runs `A1`, `A2`, and `A4`. Every sub-run uses one EC2 instance;
-no distributed job spans instances.
+**Planned compute:** AWS `AWS-A2` only. Run `EXP-07-A2V1` with one visible
+GPU and `EXP-07-A2V2` with two visible GPUs on the same physical AWS-A2 profile.
+No distributed job spans instances, and there is no current four-GPU AWS DDP
+run.
 
-**Scenario (exam style):** A software company expects four GPUs to train nearly
-four times faster than one, but measures only 1.9x speedup. GPU timelines show
+**Scenario (exam style):** A software company expects two GPUs to train nearly
+twice as fast as one, but measures a weak speedup. GPU timelines show
 all-reduces extending beyond backward computation. Should it increase local
 work, change bucket behavior, accumulate gradients locally, or conclude the
 model is too communication-heavy for DDP?
@@ -705,26 +714,27 @@ model is too communication-heavy for DDP?
 **Question:** When does replicated data parallelism scale well within one
 server, and when do gradient synchronization and small local batches dominate?
 
-**Sweep:** 1, 2, and 4 GPUs with fixed per-GPU batch (weak-scaling
-view) and fixed global batch (strong-scaling view). Test a small, justified set
-of bucket sizes and gradient accumulation with `no_sync`.
+**Sweep:** One and two visible GPUs on `AWS-A2` with fixed per-GPU batch
+(weak-scaling view) and fixed global batch (strong-scaling view). Test a small,
+justified set of bucket sizes and gradient accumulation with `no_sync`.
 
 **Measurements:** Throughput, speedup, efficiency, peak memory per GPU,
 all-reduce time, backward/communication overlap, bucket readiness, and loss
 equivalence.
 
 **Expected result:** Scaling is better when each GPU has enough computation to
-hide all-reduce. Fixed-global-batch scaling eventually loses efficiency as work
-per rank shrinks. Accumulating locally should reduce synchronization frequency
-when implemented correctly.
+hide all-reduce. Fixed-global-batch scaling loses efficiency as work per rank
+shrinks. Accumulating locally should reduce synchronization frequency when
+implemented correctly.
 
-**Why four GPUs:** The 4-rank sub-run supplies the second doubling in the
-1-to-2-to-4 curve. Without it, the experiment measures one speedup ratio but
-cannot show whether efficiency degrades non-linearly as communication grows.
+**AWS-A2 boundary:** The current run answers the immediate one-to-two-rank DDP
+communication-overlap question while avoiding scarce four-GPU AWS capacity. It
+does not claim to measure non-linear degradation from two to four ranks. Adding
+that point later requires a new decision and a distinct AWS-A4 queue.
 
 ### EXP-08: FSDP sharding and ZeRO-style memory trade-offs
 
-**Planned compute:** AWS `AWS-G7E-2` only.
+**Planned compute:** AWS `AWS-A2` only.
 
 **Scenario (exam style):** A healthcare company can train its model with DDP on
 two GPUs, but assumes full sharding must be better because it uses less memory.
@@ -750,10 +760,10 @@ a model that already fits comfortably.
 
 ### EXP-09: Controlled troubleshooting and failure diagnosis
 
-**Planned compute:** AWS `AWS-G7E-1` for one-rank failure and input-pipeline
-cases. Use `AWS-G7E-2` only for distributed faults that genuinely require two
-ranks, such as mismatched collectives, rank stragglers, and NCCL timeout
-evidence.
+**Planned compute:** AWS `AWS-A2` only. Run `EXP-09-A2V1` with one visible
+GPU for one-rank failure and input-pipeline cases, then `EXP-09-A2V2` with two
+visible GPUs for distributed faults such as mismatched collectives, rank
+stragglers, and NCCL timeout evidence.
 
 **Scenario (exam style):** A two-GPU job alternates between hanging in a
 collective, OOMing during backward, producing NaNs after enabling FP16, and
@@ -998,30 +1008,33 @@ The normal AWS sessions rent the exact active GPU count:
 
 | Session | Compute profile | Candidate work |
 | --- | --- | --- |
-| A1 | `AWS-G7E-1` | `QUAL-A1`, `EXP-02-A1`, `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, `EXP-06-A1`, `EXP-07-A1`, `EXP-09-A1` |
-| A2 | `AWS-G7E-2` | `QUAL-A2`, `EXP-01-A2`, `EXP-02-A2`, `EXP-07-A2`, `EXP-08-A2`, `EXP-09-A2` |
-| A4 | `AWS-G7E-4` | `QUAL-A4`, `EXP-07-A4` |
+| `AWS-A1` | `AWS-A1` | `QUAL-A1`, `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, `EXP-06-A1` |
+| `AWS-A2` | `AWS-A2` | `QUAL-A2`, `EXP-01-A2`, `EXP-02-A2V1`, `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`, `EXP-09-A2V1`, `EXP-09-A2V2` |
 
-`AWS-G7E-4` consumes the complete 96-vCPU G/VT quota. Before launching it, the
-lifecycle adapter must verify that no other G or VT instance is running in the
-Region. G6e, G5, G6, or another AWS family is not a silent fallback: changing
-the GPU or instance type changes the environment and requires updating the
-planned compute profile and expected results.
+There is no current AWS-A4 session. `AWS-A4` consumes the complete 96-vCPU
+G/VT quota, so reviving a four-GPU AWS DDP point requires a new decision,
+updated queue entry, and lifecycle guard verifying that no other G or VT
+instance is running in the Region. G6e, G5, G6, or another AWS family is not a
+silent fallback: changing the GPU or instance type changes the environment and
+requires updating the planned compute profile and expected results.
 
-### A2 queue preparation
+### AWS-A2 queue preparation
 
-When `AWS-G7E-2` capacity becomes available, the A2 session should run the
+When `AWS-A2` capacity becomes available, the AWS-A2 session should run the
 ready qualification and accepted work first, then stop unless later proposed
 experiments have already been accepted and implemented.
 
-| Queue order | Run unit | Current state | Required before launch |
-| ---: | --- | --- | --- |
-| 1 | `QUAL-A2` | in preparation | Fixed-image pull, cache-volume mount, SSM access, Docker root validation, two visible GPUs, topology capture, P2P smoke, and NCCL smoke |
-| 2 | `EXP-01-A2` | accepted, in preparation | Use ECR image digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`; stage out `artifacts/EXP-01/`; keep the instance available for the agreed manual inspection window |
-| 3 | `EXP-02-A2` | proposed, not ready | Accept EXP-02, implement the bounded DDP precision check, and validate non-GPU tests |
-| 4 | `EXP-07-A2` | proposed, not ready | Accept EXP-07, implement the two-rank DDP scaling profile, and validate the one-rank baseline path |
-| 5 | `EXP-08-A2` | proposed, not ready | Accept EXP-08, implement DDP/FSDP correctness and memory checks, and validate state-dict handling |
-| 6 | `EXP-09-A2` | proposed, not ready | Accept EXP-09 and implement distributed fault cases with bounded timeouts and cleanup |
+| Queue order | Run unit | Visible GPUs | Current state | Required before launch |
+| ---: | --- | ---: | --- | --- |
+| 1 | `QUAL-A2` | 1, 2 | in preparation | Fixed-image pull, cache-volume mount, SSM access, Docker root validation, topology capture, P2P smoke, NCCL smoke, and visibility-mask smoke for `V1` and `V2` |
+| 2 | `EXP-01-A2` | 2 | accepted, in preparation | Use ECR image digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`; stage out `artifacts/EXP-01/`; keep the instance available for the agreed manual inspection window |
+| 3 | `EXP-02-A2V1` | 1 | proposed, not ready | Accept EXP-02, implement the one-visible-GPU precision sweep, and validate non-GPU tests |
+| 4 | `EXP-02-A2V2` | 2 | proposed, not ready | Implement the bounded DDP precision check with constant effective global batch |
+| 5 | `EXP-07-A2V1` | 1 | proposed, not ready | Accept EXP-07, implement the one-rank baseline path, and validate non-GPU tests |
+| 6 | `EXP-07-A2V2` | 2 | proposed, not ready | Implement the two-rank DDP scaling and communication-overlap profile |
+| 7 | `EXP-08-A2V2` | 2 | proposed, not ready | Accept EXP-08, implement DDP/FSDP correctness and memory checks, and validate state-dict handling |
+| 8 | `EXP-09-A2V1` | 1 | proposed, not ready | Accept EXP-09 and implement one-rank fault/input-pipeline cases with bounded timeouts |
+| 9 | `EXP-09-A2V2` | 2 | proposed, not ready | Implement distributed fault cases with bounded timeouts and cleanup |
 
 Use separate exact-size Runpod sessions after local preparation is complete:
 

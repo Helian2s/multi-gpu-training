@@ -8,7 +8,7 @@ aws:
   region: us-west-2
 
 compute:
-  profile: AWS-G7E-2
+  profile: AWS-A2
   instance_type: g7e.12xlarge
   expected_vcpus: 48
   expected_physical_gpus: 2

@@ -57,19 +57,22 @@ a minimal piece is required to run or interpret an optimization experiment.
    models or memory sizes are separate environments and are not pooled as
    identical runs.
 3. **AWS compute profiles:** `g7e` with RTX PRO 6000 Blackwell Server Edition is
-   the planned primary family. `AWS-G7E-1` is `g7e.2xlarge` with one GPU,
-   `AWS-G7E-2` is `g7e.12xlarge` with two GPUs, and `AWS-G7E-4` is
+   the planned primary family. `AWS-A1` is `g7e.2xlarge` with one GPU,
+   `AWS-A2` is `g7e.12xlarge` with two GPUs, and `AWS-A4` is
    `g7e.24xlarge` with four GPUs. Each GPU has 96 GB; the four-GPU size consumes
-   the complete 96-vCPU quota and is used only for the DDP scaling experiment.
-   `g6e` is a contingency that requires an explicit mapping change rather than
-   a silent substitution because its GPU, memory, CPU allocation, and topology
-   differ.
+   the complete 96-vCPU quota and is not in the current AWS queue. The current
+   AWS-A2 queue may run one-visible-GPU and two-visible-GPU phases on one
+   `AWS-A2` host; reports must record both the billed physical profile and
+   visible GPU count. `g6e` is a contingency that requires an explicit mapping
+   change rather than a silent substitution because its GPU, memory, CPU
+   allocation, and topology differ.
 4. **One physical server only:** every experiment runs on one EC2 instance or
    one Runpod Pod. We will not configure multi-node training or join independent
    hosts.
 5. **Active GPU count:** every experiment exposes one to four GPUs, but four
-   GPUs are admitted only for the 1/2/4-rank DDP scaling curve and the
-   `TP=2 x DP=2` hybrid. AWS uses an exact one-, two-, or four-GPU G7e profile.
+   GPUs are admitted only for the `TP=2 x DP=2` hybrid in the current plan. AWS
+   uses exact G7e profiles, with current EXP-02, EXP-07, EXP-08, and EXP-09 AWS-A2
+   work batched on one physical `AWS-A2` host by changing visible GPU count.
    Runpod uses an exact two-GPU A100 SXM Pod for NVLink and one-/two-rank
    NeMo/Megatron work and an exact four-GPU Pod for the hybrid. Reports record
    both visible GPUs and the complete billed resource. No experiment may use
@@ -200,12 +203,15 @@ in the decision log are historical identifiers and are not current catalog IDs.
 Each provider phase begins with its model-free topology/P2P/NCCL experiment:
 EXP-01 on AWS and EXP-10 on Runpod.
 
-AWS launch planning may use run-unit IDs `QUAL-A1`, `QUAL-A2`, `QUAL-A4`, and
-`EXP-NN-A1/A2/A4` to queue concrete compute-profile sub-runs. These are not
-canonical experiment IDs, do not create experiment directories, and do not carry
-separate lifecycle status from the parent catalog row. Sub-runs that are not
-required to answer the parent hypothesis are omitted from the current queue
-instead of being kept as standby experiment work.
+AWS launch planning may use run-unit IDs `QUAL-A1`, `QUAL-A2`,
+`EXP-NN-A1`, and `EXP-NN-A2V1/A2V2` to queue concrete compute-profile phases.
+These are not canonical experiment IDs, do not create experiment directories,
+and do not carry separate lifecycle status from the parent catalog row. `V1`
+and `V2` denote the number of visible GPUs on the billed `AWS-A2` host.
+Sub-runs that are not required to answer the parent hypothesis are omitted from
+the current queue instead of being kept as standby experiment work. `QUAL-A4`
+or `EXP-NN-A4` require a new project decision before AWS four-GPU launch work
+resumes.
 
 For experiments that train a model, the accepted training mode is
 full-parameter continued pretraining with autoregressive next-token
@@ -231,7 +237,7 @@ The normal progression is:
 | --- | --- |
 | 1 GPU | Correctness, timing baseline, memory baseline, mixed precision, kernels, profiling |
 | 2 GPUs | DDP/FSDP, collectives, tensor or pipeline parallelism, communication effects |
-| 4 GPUs | Only the 1/2/4 DDP scaling curve and TP=2 x DP=2 hybrid |
+| 4 GPUs | Only the TP=2 x DP=2 hybrid in the current plan |
 
 Allowed topics include:
 
@@ -850,6 +856,56 @@ timestamps were not captured; no earlier chronology is implied by their IDs.
   new explicit decision and catalog update before implementation. The A2 queue
   begins with `QUAL-A2` and accepted `EXP-01-A2`; later A2 run units remain
   blocked until their parent experiments are accepted and implemented.
+
+### PD-023 — Batch current AWS distributed work on AWS-A2 visible-GPU phases
+
+- **Recorded:** 2026-07-14
+- **Status:** Accepted
+- **Supersedes:** PD-013, PD-015, PD-017, PD-018, and PD-022 only where they
+  preserved a current AWS four-GPU DDP scaling point or used unsuffixed
+  `EXP-NN-A2` run units for experiments that need both one- and two-visible-GPU
+  phases. It preserves the 14 canonical experiment IDs, the AWS-then-Runpod
+  provider order, and the Runpod TP=2 x DP=2 four-GPU hybrid.
+- **Decision:** Make the current AWS-A2 queue the authoritative AWS distributed
+  work queue. Run EXP-02, EXP-07, and EXP-09 one-rank or one-GPU baseline work
+  on `AWS-A2` with one visible GPU, not on a separate `AWS-A1` host. Use
+  run-unit suffixes `A2V1` and `A2V2` for one- and two-visible-GPU phases on
+  the same billed `AWS-A2` profile. Keep EXP-08 as a two-visible-GPU AWS-A2 run.
+  Remove the current EXP-07 AWS-A4 run; any future AWS four-GPU DDP point requires
+  a new decision, updated queue, and lifecycle guard.
+- **Rationale:** `AWS-A2` capacity has been scarce. Once acquired, it is more
+  useful to execute all required AWS-A2 work and its one-visible-GPU baselines than
+  to wait separately for AWS-A1 or AWS-A4 capacity. The one-to-two-rank DDP comparison
+  answers the near-term communication-overlap question, while the removed AWS-A4
+  point mainly supplied a second scaling doubling at materially higher capacity
+  risk.
+- **Consequences:** A one-visible-GPU run on AWS-A2 is not an `AWS-A1` result.
+  Reports must record `physical_profile=AWS-A2`, visible GPU count,
+  visibility mask, CPU/RAM shape, and billed resource. The catalog GPU-hour
+  estimate drops to 17.25-33.5 measured GPU-hours, while provider-billed cost
+  for masked A2 phases still charges the full two-GPU instance. EXP-02,
+  EXP-07, EXP-08, and EXP-09 remain `proposed` until explicitly accepted and
+  implemented.
+
+### PD-024 — Rename current AWS G7e profile aliases to AWS-A names
+
+- **Recorded:** 2026-07-14
+- **Status:** Accepted
+- **Supersedes:** The active profile aliases `AWS-G7E-1`, `AWS-G7E-2`, and
+  `AWS-G7E-4` used in the current snapshot and operational files. Historical
+  decision-log entries retain their original wording.
+- **Decision:** Use `AWS-A1`, `AWS-A2`, and `AWS-A4` as the current project
+  aliases for AWS G7e `g7e.2xlarge`, `g7e.12xlarge`, and `g7e.24xlarge`.
+  The `A` prefix denotes the AWS profile group and the number denotes the
+  billed physical GPU count. Visible-GPU phases on the two-GPU host use
+  run-unit suffixes such as `A2V1` and `A2V2`.
+- **Rationale:** The old aliases encoded the current EC2 family in the profile
+  name and made queue discussions harder to read. The new aliases keep the
+  operational profile stable while the exact instance type remains recorded in
+  the profile table and run artifacts.
+- **Consequences:** Active configs, tests, catalog rows, run-unit tables, and
+  AWS operator docs use `AWS-A*` names. A one-visible-GPU phase on `AWS-A2`
+  remains a two-GPU billed host and must not be reported as an `AWS-A1` result.
 
 ## Primary references
 

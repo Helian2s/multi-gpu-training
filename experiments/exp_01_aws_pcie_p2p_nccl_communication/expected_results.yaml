@@ -37,5 +37,5 @@ invalid_if:
   - Mandatory qualification fails or is missing.
   - A correctness gate fails.
   - The run uses fewer or more than two visible GPUs.
-  - The EC2 instance type, GPU model, driver, image digest, or topology differs from the accepted AWS-G7E-2 profile without a catalog update.
+  - The EC2 instance type, GPU model, driver, image digest, or topology differs from the accepted AWS-A2 profile without a catalog update.
   - The host is left running without stage-out and termination evidence.

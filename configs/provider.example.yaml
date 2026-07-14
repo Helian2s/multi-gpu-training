@@ -1,7 +1,7 @@
 schema_version: 1
 
 provider:
-  profile: null # AWS-G7E-1/2/4 or RUNPOD-A100-SXM2/4.
+  profile: null # AWS-A1/AWS-A2/AWS-A4 or RUNPOD-A100-SXM2/RUNPOD-A100-SXM4.
   name: null # aws or runpod
   location: null # AWS Region or Runpod datacenter.
   resource_type: null # EC2 instance type or Runpod Pod/GPU offer.

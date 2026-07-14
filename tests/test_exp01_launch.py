@@ -32,11 +32,11 @@ class Exp01LaunchConfigTest(unittest.TestCase):
     def test_confirmation_phrase_names_profile_and_lifetime(self):
         self.assertEqual(
             confirmation_phrase(self.config),
-            "launch EXP-01 AWS-G7E-2 terminate-after-90m",
+            "launch EXP-01 AWS-A2 terminate-after-90m",
         )
         self.assertEqual(
             confirmation_phrase(self.config, hold_open_on_exit=True),
-            "launch EXP-01 AWS-G7E-2 stop-after-90m",
+            "launch EXP-01 AWS-A2 stop-after-90m",
         )
 
     def test_run_instances_request_has_expected_safety_controls(self):
@@ -130,7 +130,7 @@ class Exp01LaunchConfigTest(unittest.TestCase):
         self.assertEqual(summary["post_run_inspection_minutes"], 15)
         self.assertEqual(
             summary["confirmation_phrase"],
-            "launch EXP-01 AWS-G7E-2 stop-after-90m",
+            "launch EXP-01 AWS-A2 stop-after-90m",
         )
 
 

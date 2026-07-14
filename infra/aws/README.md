@@ -12,18 +12,25 @@ than CUDA GPUs, so it is not an experiment resource.
 
 ## Accepted primary compute profiles
 
+`AWS-A1`, `AWS-A2`, and `AWS-A4` are project profile names for AWS G7e EC2
+instances. The `A` prefix means AWS, and the number is the billed physical GPU
+count. These names are aliases for exact instance types; they are not AWS API
+instance-family names.
+
 | Profile | Instance type | GPUs | vCPUs | Host memory | Memory per GPU | Use |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `AWS-G7E-1` | `g7e.2xlarge` | 1 | 8 | 64 GiB | 96 GB | One-GPU baselines and one-GPU experiments |
-| `AWS-G7E-2` | `g7e.12xlarge` | 2 | 48 | 512 GiB | 96 GB | Two-rank PyTorch and NVIDIA-tool experiments |
-| `AWS-G7E-4` | `g7e.24xlarge` | 4 | 96 | 1,024 GiB | 96 GB | EXP-07 four-rank DDP sub-run only |
+| `AWS-A1` | `g7e.2xlarge` | 1 | 8 | 64 GiB | 96 GB | One-GPU baselines and one-GPU experiments |
+| `AWS-A2` | `g7e.12xlarge` | 2 | 48 | 512 GiB | 96 GB | Current AWS distributed queue; may run one- or two-visible-GPU phases |
+| `AWS-A4` | `g7e.24xlarge` | 4 | 96 | 1,024 GiB | 96 GB | Not in the current queue; requires a new decision before use |
 
 All three profiles use the RTX PRO 6000 Blackwell Server Edition. The two- and
 four-GPU profiles support GPUDirect P2P over PCIe; the one-GPU profile has no
-inter-GPU path. `AWS-G7E-4` consumes the complete approved quota, so the adapter
-must verify that no other G or VT instance is running before launch. The
-profiles remain subject to current On-Demand price, Availability Zone offering,
-capacity, permission, container, and profiler qualification.
+inter-GPU path. `AWS-A2V1` and `AWS-A2V2` are run-unit phase suffixes, not
+separate EC2 profiles: they mean one or two visible GPUs on the same billed
+`AWS-A2` host. `AWS-A4` consumes the complete approved quota, so any future
+AWS-A4 launch must verify that no other G or VT instance is running before
+launch. The profiles remain subject to current On-Demand price, Availability
+Zone offering, capacity, permission, container, and profiler qualification.
 
 G6e/L40S is a contingency, not a silent runtime fallback. Using it would change
 GPU memory, CPU allocation, topology, precision support, and potentially the
@@ -73,8 +80,9 @@ Official sources:
   cost.
 - **Access:** SSH or AWS Systems Manager will be chosen during qualification;
   experiment code must not depend on that choice.
-- **Visibility:** use the exact `AWS-G7E-1`, `AWS-G7E-2`, or `AWS-G7E-4`
-  profile; no masking is expected in normal AWS runs.
+- **Visibility:** use the exact `AWS-A1`, `AWS-A2`, or `AWS-A4` physical
+  profile; `AWS-A2` may deliberately mask to one visible GPU for `A2V1`
+  phases.
 - **Cost safety:** require project/run tags, maximum instance lifetime, verified
   stage-out, and stop/termination in success and failure paths.
 
@@ -107,7 +115,7 @@ The current recorded EXP-01 host and image are:
 AMI: ami-04b4c34375925db5f
 AMI name: Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) 20260710
 Instance type: g7e.12xlarge
-Compute profile: AWS-G7E-2
+Compute profile: AWS-A2
 Security group: sg-0797f3b8520d4efa9
 Instance profile: FinetuningGpuInstanceRole
 Root EBS: 120 GiB gp3, encrypted, delete-on-termination

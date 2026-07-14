@@ -94,7 +94,7 @@ The active EXP-01 placement now lets AWS select the default subnet/AZ and then
 attaches the matching retained cache volume. Fixed-AZ retries in `us-west-2a`,
 `us-west-2b`, `us-west-2c`, and `us-west-2d` returned
 `InsufficientInstanceCapacity`; the AWS-selected placement retry also returned
-`Insufficient capacity`. A later AWS-selected AWS-G7E-2 retry returned the same
+`Insufficient capacity`. A later AWS-selected AWS-A2 retry returned the same
 capacity error. None of those capacity failures created an instance.
 
 ## Security action

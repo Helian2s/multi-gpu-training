@@ -4,7 +4,7 @@ Report status: Not run
 
 ## Executive conclusion
 
-Not run. This report remains a placeholder until AWS-G7E-2 qualification and
+Not run. This report remains a placeholder until AWS-A2 qualification and
 EXP-01 collection complete.
 
 ## Run inventory
