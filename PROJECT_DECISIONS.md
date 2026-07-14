@@ -42,14 +42,16 @@ a minimal piece is required to run or interpret an optimization experiment.
 
 ## Accepted infrastructure decisions
 
-1. **Supported cloud providers:** AWS EC2 and Runpod. AWS is the primary
-   execution provider for the catalog because the `Running On-Demand G and VT
-   instances` quota in `us-west-2` has been raised to 96 vCPUs. Runpod supplies
-   the A100 SXM/NVLink environment for the Runpod communication baseline and all
-   NeMo/Megatron experiments. No measured run begins until the selected resource
-   passes capacity, permission, price, and runtime qualification. VT1
-   video-transcoding accelerators are part of the quota's name but are not CUDA
-   GPUs and are not used by this project.
+1. **Supported cloud providers:** AWS EC2 and Runpod. AWS remains the
+   PyTorch/Blackwell/PCIe provider, and Runpod supplies the A100 SXM/NVLink
+   environment for the Runpod communication baseline and all NeMo/Megatron
+   experiments. AWS capacity failures do not cancel the AWS queues; Runpod
+   preparation may proceed in parallel while AWS launch configurations, ECR
+   images, S3 paths, and cache volumes remain available for later retry. No
+   measured run begins until the selected resource passes capacity, permission,
+   price, and runtime qualification. VT1 video-transcoding accelerators are part
+   of the AWS quota's name but are not CUDA GPUs and are not used by this
+   project.
 2. **GPU policy:** the project is not restricted to A100. It uses NVIDIA GPUs
    supported by the pinned CUDA, PyTorch, NeMo/Megatron, Transformer Engine, and
    profiler stack. Every result records provider, location, resource type,
@@ -93,7 +95,12 @@ a minimal piece is required to run or interpret an optimization experiment.
    Cloud Pod with two `NVIDIA A100-SXM4-80GB` GPUs for Runpod topology/NCCL and
    every one-/two-rank NeMo/Megatron experiment, including TP/SP, PP, and CP.
    `RUNPOD-A100-SXM4` is a separate four-GPU Pod used only for the NeMo/Megatron
-   `TP=2 x DP=2` hybrid. AWS remains the PyTorch/Blackwell/PCIe environment.
+   `TP=2 x DP=2` hybrid. The active Runpod queue labels are `RUNPOD-A1` for
+   one-visible-GPU A100 SXM baselines, `RUNPOD-A2` for two-GPU A100 SXM
+   readiness, communication, and NeMo/Megatron work, and `RUNPOD-A4` for the
+   four-GPU hybrid. The Runpod `A` number denotes visible GPU count for the
+   queue; the billed Pod resource profile is still recorded separately in every
+   run artifact. AWS remains the PyTorch/Blackwell/PCIe environment.
    Qualification must show NVLink between every selected pair; NVSwitch is
    recorded only if observed topology proves it.
 10. **One provider per experiment:** an experiment is assigned to AWS or
@@ -205,10 +212,12 @@ catalog status.
 
 Current canonical experiment IDs use the two-digit form `EXP-NN` and define the
 recommended provider-blocked order: EXP-01 through EXP-09 are the AWS phase;
-EXP-10 through EXP-14 are the Runpod phase. Three-digit experiment IDs appearing
-in the decision log are historical identifiers and are not current catalog IDs.
-Each provider phase begins with its model-free topology/P2P/NCCL experiment:
-EXP-01 on AWS and EXP-10 on Runpod.
+EXP-10 through EXP-14 are the Runpod phase. The active execution queues are
+`AWS-A1`, `AWS-A2`, `RUNPOD-A1`, `RUNPOD-A2`, and `RUNPOD-A4`; AWS queues stay
+eligible for retry while Runpod preparation proceeds. Three-digit experiment
+IDs appearing in the decision log are historical identifiers and are not current
+catalog IDs. Each provider phase begins with its model-free topology/P2P/NCCL
+experiment: EXP-01 on AWS and EXP-10 on Runpod.
 
 AWS launch planning may use run-unit IDs `QUAL-A1`, `QUAL-A2`,
 `EXP-NN-A1`, and `EXP-NN-A2V1/A2V2` to queue concrete compute-profile phases.
@@ -219,6 +228,12 @@ Sub-runs that are not required to answer the parent hypothesis are omitted from
 the current queue instead of being kept as standby experiment work. `QUAL-A4`
 or `EXP-NN-A4` require a new project decision before AWS four-GPU launch work
 resumes.
+
+Runpod execution planning uses GPU-count queue labels `RUNPOD-A1`,
+`RUNPOD-A2`, and `RUNPOD-A4` plus exact Pod resource profiles. These labels
+organize execution and artifacts; they are not canonical experiment IDs and do
+not replace the exact GPU type, billed GPU count, visible GPU count,
+datacenter, Pod ID, topology, or image digest in run records.
 
 For experiments that train a model, the accepted training mode is
 full-parameter continued pretraining with autoregressive next-token
@@ -933,6 +948,35 @@ timestamps were not captured; no earlier chronology is implied by their IDs.
   profile. Qualification and experiment commands may have separate modes inside
   the same image. A new PyTorch image is required only when source,
   dependencies, profiler tooling, or runtime contracts change.
+
+### PD-026 — Use five active execution queues while AWS capacity is scarce
+
+- **Recorded:** 2026-07-14
+- **Status:** Accepted
+- **Supersedes:** PD-016 only where it used the temporary Runpod `R2` and `R4`
+  session labels, and any earlier workflow wording that implied Runpod
+  preparation must wait for AWS capacity. It preserves the canonical
+  EXP-01 through EXP-14 experiment IDs, one-provider-per-experiment rule, AWS
+  G7e assignments, and Runpod A100 SXM assignments.
+- **Decision:** Use five active execution queues: `AWS-A1`, `AWS-A2`,
+  `RUNPOD-A1`, `RUNPOD-A2`, and `RUNPOD-A4`. Keep AWS launch configurations,
+  ECR images, S3 artifact prefixes, and retained cache volumes available for
+  later AWS retries. Start Runpod preparation now, but do not launch a paid
+  Runpod Pod until the exposed API key is rotated, local Runpod tooling passes
+  readiness checks, registry pull access is configured, durable storage is
+  planned, and the launch receives explicit approval.
+- **Rationale:** Current AWS G7e capacity is unreliable even though AWS quota,
+  permissions, subnets, images, and dry-runs are valid. A queue model lets the
+  project make progress on Runpod without deleting or de-prioritizing the AWS
+  path.
+- **Consequences:** `RUNPOD-A1` means one-visible-GPU A100 SXM baselines,
+  `RUNPOD-A2` means two-GPU A100 SXM readiness, communication, and
+  NeMo/Megatron work, and `RUNPOD-A4` means the four-GPU A100 SXM hybrid queue.
+  The Runpod `A` number is the visible GPU count for the queue. Because
+  one-visible-GPU baselines may run on the same billed two-GPU Pod as their
+  two-GPU comparisons, every run still records billed GPU count, visible GPU
+  count, Pod resource profile, datacenter, topology, visible mask, image digest,
+  and billed resource.
 
 ## Primary references
 

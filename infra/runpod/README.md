@@ -5,6 +5,19 @@ provide and hosts every NeMo/Megatron experiment in the current catalog. It is
 not a silent general fallback for AWS; broader Runpod use requires updating the
 planned compute mapping.
 
+The active Runpod execution queues are:
+
+| Queue | Resource profile | Purpose |
+| --- | --- | --- |
+| `RUNPOD-A1` | `RUNPOD-A100-SXM2` with one visible GPU | One-visible-GPU NeMo/Megatron baselines |
+| `RUNPOD-A2` | `RUNPOD-A100-SXM2` with two visible GPUs | Provider readiness, GHCR/storage validation, two-GPU qualification, EXP-10 NVLink/NCCL baseline, and two-GPU NeMo/Megatron phases |
+| `RUNPOD-A4` | `RUNPOD-A100-SXM4` | EXP-14 four-GPU TP=2 x DP=2 hybrid |
+
+The `RUNPOD-A*` labels are visible-GPU-count queue labels. Every run still
+records the exact Runpod resource profile, GPU type, billed GPU count, visible
+GPU count, datacenter, Pod ID, topology, visible mask, image digest, and billed
+resource.
+
 ## Accepted profiles
 
 `RUNPOD-A100-SXM2` means:
@@ -17,13 +30,29 @@ planned compute mapping.
   measured process group. NVSwitch is recorded only when the observed topology
   proves it.
 
-It is used by EXP-10 and EXP-11 through EXP-13. A one-visible-GPU baseline
-still pays for both GPUs, so the full resource cost is recorded. Once the shared
-workload and NeMo image are accepted, stage the pinned image, converted model,
-and dataset once and reuse them across the grouped R2 session.
+It is used by `RUNPOD-A1` and `RUNPOD-A2`: one-visible-GPU EXP-11 through
+EXP-13 baselines, EXP-10, and two-visible-GPU EXP-11 through EXP-13 phases. A
+one-visible-GPU baseline still pays for both GPUs when it runs on this two-GPU
+Pod, so the full resource cost is recorded. Once the shared workload and NeMo
+image are accepted, stage the pinned image, converted model, and dataset once
+and reuse them across the grouped one-/two-visible-GPU queues when datacenter
+placement permits.
 
 `RUNPOD-A100-SXM4` has the same requirements with four rented and visible GPUs.
-It is used only by EXP-14 because TP=2 x DP=2 requires four ranks.
+It is used only by `RUNPOD-A4` / EXP-14 because TP=2 x DP=2 requires four ranks.
+
+## Immediate preparation gates
+
+Before a paid Runpod Pod is launched:
+
+1. Rotate the previously exposed Runpod API key outside chat and Git.
+2. Install and configure `runpodctl` locally, then run `runpodctl doctor`.
+3. Configure GHCR pull-only access for Runpod; do not store AWS credentials in
+   Runpod.
+4. Choose a network-volume and artifact layout, including how pinned model/data
+   inputs are staged and checksummed.
+5. Define launch guards for maximum lifetime/cost, durable stage-out, and
+   stop/delete behavior on success and failure.
 
 ## Planned implementation
 

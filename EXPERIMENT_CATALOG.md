@@ -27,8 +27,10 @@ project decisions.
 The numbered rows begin with `Status=proposed`. Change an experiment to
 `accepted` or `deferred` during review; use `completed` only after its report is
 finished. Only accepted experiments receive an implementation directory.
-Canonical IDs `EXP-01` through `EXP-14` also define the recommended high-level
-execution order: finish the AWS phase before starting the grouped Runpod phase.
+Canonical IDs `EXP-01` through `EXP-14` define the learning order. Execution is
+organized by the active queues `AWS-A1`, `AWS-A2`, `RUNPOD-A1`, `RUNPOD-A2`,
+and `RUNPOD-A4`; Runpod preparation can proceed while AWS capacity is
+unavailable, and AWS remains available for later retry.
 
 ## Proposed shared workload contract
 
@@ -279,6 +281,11 @@ GPUs respectively. The digit records the billed physical GPU count; a run-unit
 suffix such as `A2V1` or `A2V2` records how many GPUs are visible inside a
 two-GPU `AWS-A2` host.
 
+Runpod queue names are operational GPU-count labels, not EC2-style instance
+types. `RUNPOD-A1`, `RUNPOD-A2`, and `RUNPOD-A4` describe one-, two-, and
+four-visible-GPU Runpod work queues. The exact billed Pod GPU count and GPU
+model remain recorded in the resource profile and every run artifact.
+
 | Profile | Provider resource | Physical GPUs | Normal visible GPUs | Purpose |
 | --- | --- | ---: | ---: | --- |
 | `AWS-A1` | AWS `us-west-2`, On-Demand `g7e.2xlarge` | 1 x RTX PRO 6000 Blackwell Server Edition 96 GB | 1 | One-GPU correctness, kernel, memory, and profiling runs that are not batched into AWS-A2 |
@@ -293,6 +300,16 @@ identify the resource. A Runpod profile is admissible only when qualification
 shows the intended GPUs on one physical host and NVLink between every selected
 pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 
+Current execution queues:
+
+| Queue | Resource profile | Candidate work | Current posture |
+| --- | --- | --- | --- |
+| `AWS-A1` | AWS `AWS-A1` | `QUAL-A1`, EXP-03 through EXP-06 | Prepared; real all-AZ probe hit `InsufficientInstanceCapacity` |
+| `AWS-A2` | AWS `AWS-A2` | `QUAL-A2`, EXP-01, EXP-02, EXP-07, EXP-08, EXP-09 | Prepared; real launch attempts hit `InsufficientInstanceCapacity` |
+| `RUNPOD-A1` | Runpod `RUNPOD-A100-SXM2` with one visible GPU | One-visible-GPU NeMo/Megatron baselines for EXP-11, EXP-12, and EXP-13 | Proposed; depends on `RUNPOD-A2` readiness and NeMo/Megatron image validation |
+| `RUNPOD-A2` | Runpod `RUNPOD-A100-SXM2` with two visible GPUs | Runpod tooling/storage/registry readiness, two-GPU qualification, EXP-10, and two-GPU EXP-11/12/13 phases | Next preparation focus; paid launch blocked until key rotation and readiness checks |
+| `RUNPOD-A4` | Runpod `RUNPOD-A100-SXM4` | EXP-14 | Proposed; depends on local rank-map validation and successful two-GPU NeMo/Megatron work |
+
 | ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
 | --- | --- | --- | ---: | --- | ---: | --- |
 | EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-A2` | 1.5-3.0 | accepted |
@@ -304,11 +321,11 @@ pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 | EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 2.0-4.0 | accepted |
 | EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-A2` | 1.0-2.0 | accepted |
 | EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.5-3.0 | accepted |
-| EXP-10 | Runpod NVLink P2P and NCCL communication | NCCL/NVIDIA tools | 2 | Runpod `RUNPOD-A100-SXM2` | 1.5-3.0 | proposed |
-| EXP-11 | Tensor plus sequence parallelism | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 2.0-4.0 | proposed |
-| EXP-12 | Pipeline schedules and bubble size | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
-| EXP-13 | Context parallelism for long sequences | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
-| EXP-14 | TP=2 x DP=2 for model width and throughput | NeMo/Megatron | 4 | Runpod `RUNPOD-A100-SXM4` | 2.0-3.0 | proposed |
+| EXP-10 | Runpod NVLink P2P and NCCL communication | NCCL/NVIDIA tools | 2 | Runpod `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 1.5-3.0 | proposed |
+| EXP-11 | Tensor plus sequence parallelism | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A1` and `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 2.0-4.0 | proposed |
+| EXP-12 | Pipeline schedules and bubble size | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A1` and `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
+| EXP-13 | Context parallelism for long sequences | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A1` and `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
+| EXP-14 | TP=2 x DP=2 for model width and throughput | NeMo/Megatron | 4 | Runpod `RUNPOD-A4` on `RUNPOD-A100-SXM4` | 2.0-3.0 | proposed |
 
 The 14 core row estimates sum to 17.25-33.5 measured GPU-hours. First-time
 debugging and profiler setup can make the billable total materially higher.
@@ -348,7 +365,7 @@ near-term communication-overlap question with less capacity risk. Adding an AWS
 four-GPU run requires an explicit hypothesis that cannot be answered with one
 or two visible GPUs and a project-decision update.
 
-### AWS run-unit ID system
+### Provider queue and run-unit ID system
 
 Canonical experiment IDs remain `EXP-NN` and are the only IDs used for
 experiment directories, reports, and lifecycle status. AWS execution planning
@@ -388,6 +405,19 @@ Current AWS run units:
 | `EXP-08-A2V2` | EXP-08 | `AWS-A2`, two visible GPUs | accepted, in preparation | FSDP/DDP memory and communication comparison |
 | `EXP-09-A2V1` | EXP-09 | `AWS-A2`, one visible GPU | accepted, in preparation | One-rank failure and input-pipeline cases on the acquired AWS-A2 host |
 | `EXP-09-A2V2` | EXP-09 | `AWS-A2`, two visible GPUs | accepted, in preparation | Distributed fault cases that require two ranks |
+
+Current Runpod queues:
+
+| Queue | Parent | Resource profile | Status | Purpose |
+| --- | --- | --- | --- | --- |
+| `RUNPOD-A1` | EXP-11 through EXP-13 one-visible-GPU phases | `RUNPOD-A100-SXM2` with one visible GPU | proposed | One-visible-GPU NeMo/Megatron tensor, sequence, pipeline, and context-parallel baselines after `RUNPOD-A2` is qualified |
+| `RUNPOD-A2` | Shared Runpod readiness, EXP-10, and EXP-11 through EXP-13 two-visible-GPU phases | `RUNPOD-A100-SXM2` with two visible GPUs | in preparation | Rotate key, configure local tooling, validate registry/storage access, qualify two A100 SXM GPUs, and run the NVLink/NCCL baseline |
+| `RUNPOD-A4` | EXP-14 | `RUNPOD-A100-SXM4` | proposed | Four-rank TP=2 x DP=2 hybrid work after the two-GPU NeMo/Megatron path is correct |
+
+Runpod queue labels appear in launch queues, artifact manifests, and report
+subsections. They do not create separate experiment directories or replace the
+exact Pod ID, datacenter, GPU type, GPU count, topology, visible mask, or image
+digest recorded for each run.
 
 ## Mandatory pre-run qualification
 
@@ -830,7 +860,7 @@ the pipeline rather than NCCL is corrected.
 
 ### EXP-10: Runpod NVLink P2P and NCCL communication
 
-**Planned compute:** Runpod `RUNPOD-A100-SXM2` only.
+**Planned compute:** Runpod `RUNPOD-A2` queue on `RUNPOD-A100-SXM2` only.
 
 **Educational goal:** Learn how to qualify an A100 SXM/NVLink host and explain
 how NVLink topology changes P2P and collective behavior compared with the AWS
@@ -859,9 +889,10 @@ set communication expectations for EXP-11 through EXP-14.
 
 ### EXP-11: Tensor plus sequence parallelism
 
-**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
-visible GPUs on the same billed two-GPU Pod so the TP=1 baseline and TP=2 run
-share the exact GPU type and host environment.
+**Planned compute:** Runpod `RUNPOD-A1` and `RUNPOD-A2` queues on
+`RUNPOD-A100-SXM2` only. Use one and then two visible GPUs on the same billed
+two-GPU Pod so the TP=1 baseline and TP=2 run share the exact GPU type and host
+environment.
 
 **Educational goal:** Learn which parts of a transformer layer tensor
 parallelism shards, how sequence parallelism reduces activation pressure, and
@@ -891,9 +922,9 @@ collective pattern; it does not consume another multiplicative GPU dimension.
 
 ### EXP-12: Pipeline schedules and bubble size
 
-**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
-visible GPUs on the same billed Pod so PP=1 and PP=2 share the image, GPU type,
-and host environment.
+**Planned compute:** Runpod `RUNPOD-A1` and `RUNPOD-A2` queues on
+`RUNPOD-A100-SXM2` only. Use one and then two visible GPUs on the same billed
+Pod so PP=1 and PP=2 share the image, GPU type, and host environment.
 
 **Educational goal:** Learn how pipeline stage balance, microbatch count, and
 schedule choice determine bubble overhead, activation memory, and throughput.
@@ -920,8 +951,9 @@ the throughput limit.
 
 ### EXP-13: Context parallelism for long sequences
 
-**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
-visible GPUs on the same billed Pod.
+**Planned compute:** Runpod `RUNPOD-A1` and `RUNPOD-A2` queues on
+`RUNPOD-A100-SXM2` only. Use one and then two visible GPUs on the same billed
+Pod.
 
 **Educational goal:** Learn when context parallelism becomes useful for long
 sequence training, and how to compare its activation-memory savings against
@@ -950,7 +982,7 @@ the crossover is the important result.
 
 ### EXP-14: TP=2 x DP=2 for model width and throughput
 
-**Planned compute:** Runpod `RUNPOD-A100-SXM4` only.
+**Planned compute:** Runpod `RUNPOD-A4` queue on `RUNPOD-A100-SXM4` only.
 
 **Educational goal:** Learn how tensor-parallel and data-parallel process
 groups compose in a four-rank hybrid, and how to reason about memory,
@@ -1034,23 +1066,26 @@ from the numbered catalog.
 
 ## Proposed implementation order
 
-Experiment numbering defines the recommended provider-blocked order. A later
-experiment still starts only after its explicit prerequisites pass:
+Experiment numbering defines the recommended learning order. Execution now uses
+five active queues so Runpod preparation can proceed while AWS G7e capacity is
+unavailable. A later experiment still starts only after its explicit
+prerequisites pass:
 
 1. **Preflight:** implement the mandatory qualification script.
 2. **AWS communication baseline:** EXP-01.
 3. **AWS execution fundamentals and profiling:** EXP-02 through EXP-06.
 4. **AWS data parallelism:** EXP-07 and EXP-08.
 5. **AWS troubleshooting:** EXP-09.
-6. **Runpod communication baseline:** EXP-10.
-7. **Runpod model-parallel dimensions:** EXP-11 through EXP-13.
-8. **Runpod hybrid layout:** EXP-14.
+6. **RUNPOD-A2:** Runpod readiness and EXP-10 communication baseline.
+7. **RUNPOD-A1/RUNPOD-A2:** EXP-11 through EXP-13 model-parallel dimensions.
+8. **RUNPOD-A4:** EXP-14 hybrid layout.
 9. **Synthesis:** write the final curriculum report and exam decision worksheet.
 
 Compute-profile sub-runs may be batched for cost efficiency, but their reports
-retain this logical order. An experiment should not start merely because it is
-next in the list; prerequisite correctness and measurement tools must already
-be validated.
+retain this logical order. AWS queues remain available for retry when capacity
+appears; Runpod work does not overwrite AWS state. An experiment should not
+start merely because it is next in the list; prerequisite correctness and
+measurement tools must already be validated.
 
 ## Compute-session strategy
 
@@ -1058,12 +1093,15 @@ To reduce idle cloud cost, group final runs only after local implementation and
 non-GPU tests pass. Every session begins with shared qualification and a short
 smoke test and ends only after artifacts reach durable storage.
 
-The normal AWS sessions rent the exact active GPU count:
+Active execution queues:
 
-| Session | Compute profile | Candidate work |
-| --- | --- | --- |
-| `AWS-A1` | `AWS-A1` | `QUAL-A1`, `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, `EXP-06-A1` |
-| `AWS-A2` | `AWS-A2` | `QUAL-A2`, `EXP-01-A2`, `EXP-02-A2V1`, `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`, `EXP-09-A2V1`, `EXP-09-A2V2` |
+| Queue | Resource profile | Visible-GPU phases | Candidate work |
+| --- | --- | ---: | --- |
+| `AWS-A1` | AWS `AWS-A1` | 1 | `QUAL-A1`, `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, `EXP-06-A1` |
+| `AWS-A2` | AWS `AWS-A2` | 1, 2 | `QUAL-A2`, `EXP-01-A2`, `EXP-02-A2V1`, `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`, `EXP-09-A2V1`, `EXP-09-A2V2` |
+| `RUNPOD-A1` | Runpod `RUNPOD-A100-SXM2` | 1 | One-visible-GPU EXP-11, EXP-12, and EXP-13 baselines |
+| `RUNPOD-A2` | Runpod `RUNPOD-A100-SXM2` | 2 | Runpod access/storage/registry readiness, two-GPU qualification, EXP-10, and two-GPU EXP-11/12/13 phases |
+| `RUNPOD-A4` | Runpod `RUNPOD-A100-SXM4` | 4 | EXP-14 |
 
 There is no current AWS-A4 session. `AWS-A4` consumes the complete 96-vCPU
 G/VT quota, so reviving a four-GPU AWS DDP point requires a new decision,
@@ -1082,6 +1120,10 @@ the retained cache-volume map, and a one-GPU CUDA/NCCL smoke command.
 AWS-A1 and AWS-A2 do not need separate PyTorch images while their software
 stack is identical; the run-unit config selects the EC2 profile, visible GPU
 mask, and qualification or experiment command.
+The approved real `QUAL-A1` sequential capacity probe on 2026-07-14 tried
+`us-west-2a`, `us-west-2b`, `us-west-2c`, and `us-west-2d`; every pinned-AZ
+request failed before instance creation with AWS `InsufficientInstanceCapacity`,
+so no cleanup was required.
 
 | Queue order | Run unit | Visible GPUs | Current state | Required before launch |
 | ---: | --- | ---: | --- | --- |
@@ -1112,17 +1154,54 @@ reviewed scan results or an explicit measured-run exception.
 | 8 | `EXP-09-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate one-rank fault smoke before measurement |
 | 9 | `EXP-09-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate distributed fault smoke before measurement |
 
-Use separate exact-size Runpod sessions after local preparation is complete:
+### RUNPOD-A1 queue preparation
 
-| Session | Compute profile | Visible-GPU phases | Candidate work |
-| --- | --- | ---: | --- |
-| R2 | `RUNPOD-A100-SXM2` | 1, 2 | EXP-10 followed by all two-GPU NeMo/Megatron work, EXP-11 through EXP-13 |
-| R4 | `RUNPOD-A100-SXM4` | 4 | EXP-14 only |
+`RUNPOD-A1` is the one-visible-GPU Runpod queue for NeMo/Megatron baselines.
+It uses the same exact `RUNPOD-A100-SXM2` billed resource profile as
+`RUNPOD-A2`, with one GPU exposed to the container, so one- and two-GPU phases
+share the same GPU type and host environment. Paid launch remains blocked until
+the exposed Runpod API key is rotated and local Runpod readiness checks pass.
 
-The R2 session pays for two GPUs even during a one-visible-GPU baseline. The R4
-session is not launched until EXP-11 is correct and EXP-14's rank map passes a
-local/configuration check. AWS and Runpod results remain separate because GPU
-generation, memory technology, CPU allocation, and interconnect all differ.
+| Queue order | Work item | Visible GPUs | Current state | Required before launch |
+| ---: | --- | ---: | --- | --- |
+| 1 | `QUAL-RUNPOD-A1` | 1 | proposed | Validate one-visible-GPU masking and a short NeMo/Megatron training smoke on the qualified two-GPU Pod |
+| 2 | `EXP-11-RUNPOD-A1` | 1 | proposed | Accept and implement the TP/SP one-GPU baseline before measurement |
+| 3 | `EXP-12-RUNPOD-A1` | 1 | proposed | Accept and implement the PP one-GPU baseline before measurement |
+| 4 | `EXP-13-RUNPOD-A1` | 1 | proposed | Accept and implement the CP one-GPU baseline before measurement |
+
+### RUNPOD-A2 queue preparation
+
+`RUNPOD-A2` is the immediate Runpod preparation target. It uses the exact
+two-GPU `RUNPOD-A100-SXM2` resource profile and is responsible for provider
+readiness, GHCR pull access, durable Runpod storage planning, two-GPU topology
+qualification, the EXP-10 NVLink/NCCL baseline, and the two-GPU phases of
+EXP-11 through EXP-13.
+
+| Queue order | Work item | Visible GPUs | Current state | Required before launch |
+| ---: | --- | ---: | --- | --- |
+| 1 | Runpod credential rotation | 0 | blocked | Rotate the exposed API key outside chat and Git, then update only local Runpod auth |
+| 2 | Local Runpod tooling check | 0 | not started | Install/configure `runpodctl`, verify identity/status, and record readiness in `infra/TOOLING.md` |
+| 3 | Registry and storage readiness | 0 | not started | Configure GHCR pull-only access, choose network-volume layout, and plan durable artifact paths |
+| 4 | `QUAL-RUNPOD-A2` | 2 | proposed | Launch a guarded two-GPU Pod only after explicit approval; verify image pull, topology, NVLink, NCCL, profiler access, artifact stage-out, and a short NeMo/Megatron smoke |
+| 5 | `EXP-10-RUNPOD-A2` | 2 | proposed | Accept and implement EXP-10 before creating an experiment directory or measurement launcher |
+| 6 | `EXP-11-RUNPOD-A2` | 2 | proposed | Accept and implement tensor/sequence parallelism before measurement |
+| 7 | `EXP-12-RUNPOD-A2` | 2 | proposed | Accept and implement pipeline schedule experiments before measurement |
+| 8 | `EXP-13-RUNPOD-A2` | 2 | proposed | Accept and implement context-parallel experiments before measurement |
+
+### RUNPOD-A4 queue preparation
+
+`RUNPOD-A4` is the four-GPU A100 SXM hybrid queue for EXP-14 only. It is not
+launched until `RUNPOD-A2` proves the NeMo/Megatron stack and the local
+configuration check validates the TP=2 x DP=2 rank map.
+
+| Queue order | Work item | Visible GPUs | Current state | Required before launch |
+| ---: | --- | ---: | --- | --- |
+| 1 | Local rank-map check | 0 | proposed | Validate TP=2 x DP=2 process-group mapping without a paid Pod |
+| 2 | `QUAL-RUNPOD-A4` | 4 | proposed | Launch a guarded four-GPU Pod only after explicit approval; verify all four GPUs, topology, NVLink/NVSwitch evidence, and image/runtime parity |
+| 3 | `EXP-14-RUNPOD-A4` | 4 | proposed | Accept and implement the hybrid layout after the qualification and local rank-map checks pass |
+
+AWS and Runpod results remain separate because GPU generation, memory
+technology, CPU allocation, and interconnect all differ.
 
 ## Selection questions
 
