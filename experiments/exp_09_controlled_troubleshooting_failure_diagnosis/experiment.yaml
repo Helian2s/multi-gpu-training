@@ -1,0 +1,157 @@
+schema_version: 1
+
+experiment:
+  id: EXP-09
+  slug: controlled_troubleshooting_failure_diagnosis
+  title: Controlled troubleshooting and failure diagnosis
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: pytorch
+  image: null # Rebuild and publish the PyTorch image from accepted source before launch.
+
+hardware:
+  compute_profile: AWS-A2
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.12xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 2
+  visible_gpu_count: null
+  visible_devices: []
+  single_node: true
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/exp01_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: smoke
+  overrides:
+    input_lock: ../../configs/inputs.lock.yaml
+    model_id: Qwen/Qwen3-1.7B-Base
+    model_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+    dataset_id: Salesforce/wikitext
+    dataset_configuration: wikitext-103-raw-v1
+    dataset_revision: b08601e04326c79dfdd32d625aee71d232d685c3
+    preprocessing_version: qwen3-wikitext-v1
+    training_mode: full_parameter_continued_pretraining
+    objective: causal_next_token_cross_entropy
+    sequence_length: 1024
+    maximum_case_seconds: 300
+    restore_checkpoint_between_cases: true
+
+sweep:
+  baseline: EXP-09-A2V1-healthy-smoke
+  variants:
+    - id: EXP-09-A2V1-healthy-smoke
+      run_unit: EXP-09-A2V1
+      visible_devices: [0]
+      world_size: 1
+      case: healthy_training_smoke
+      expected_outcome: pass
+    - id: EXP-09-A2V1-oom-fragmentation
+      run_unit: EXP-09-A2V1
+      visible_devices: [0]
+      world_size: 1
+      case: bounded_oom_or_fragmentation
+      expected_outcome: controlled_failure
+    - id: EXP-09-A2V1-numerical-overflow
+      run_unit: EXP-09-A2V1
+      visible_devices: [0]
+      world_size: 1
+      case: fp16_nonfinite_gradient
+      expected_outcome: controlled_failure
+    - id: EXP-09-A2V1-input-starvation
+      run_unit: EXP-09-A2V1
+      visible_devices: [0]
+      world_size: 1
+      case: input_pipeline_starvation
+      expected_outcome: diagnosed_and_recovered
+    - id: EXP-09-A2V2-mismatched-collective
+      run_unit: EXP-09-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      case: mismatched_collective
+      expected_outcome: controlled_failure
+      timeout_seconds: 120
+    - id: EXP-09-A2V2-rank-straggler
+      run_unit: EXP-09-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      case: artificial_rank_straggler
+      expected_outcome: diagnosed_and_recovered
+      timeout_seconds: 300
+    - id: EXP-09-A2V2-nccl-timeout-evidence
+      run_unit: EXP-09-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      case: nccl_timeout_signature
+      expected_outcome: controlled_failure
+      timeout_seconds: 120
+  fixed:
+    host_profile: AWS-A2
+    physical_instance_type: g7e.12xlarge
+    single_node: true
+    seeds: [1337]
+    fault_cases_are_bounded: true
+    recovery_must_be_demonstrated: true
+
+execution:
+  launcher: python experiments/exp_09_controlled_troubleshooting_failure_diagnosis/run_exp09.py --execute
+  planning_command: python experiments/exp_09_controlled_troubleshooting_failure_diagnosis/run_exp09.py --dry-run
+  environment:
+    NCCL_DEBUG: INFO
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+    TORCH_DISTRIBUTED_DEBUG: DETAIL
+  timeout_seconds: 5400
+
+measurements:
+  required:
+    - immutable image digest
+    - driver, CUDA, PyTorch, and NCCL versions
+    - GPU visibility and topology
+    - case name, injected fault, expected failure mode, and observed exit status
+    - stderr, stdout, NCCL logs, and PyTorch distributed logs
+    - GPU utilization and memory evidence
+    - CPU, RAM, and input-wait evidence for input starvation
+    - root cause classification
+    - corrective action and recovery proof
+  profilers:
+    - torch-profiler
+    - nsight-systems-optional
+    - nvidia-smi
+  repetitions: 1
+
+correctness:
+  gates:
+    - mandatory AWS-A2 qualification passes
+    - healthy smoke case passes before fault cases run
+    - each fault case exits within its bounded timeout
+    - controlled failures are classified as expected failures, not infrastructure failures
+    - recovery cases show the corrected configuration completing successfully
+    - all distributed ranks are cleaned up after each fault case
+    - artifact stage-out happens even for intentional failure cases
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-09/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 3.0
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: 15.0
+  stop_conditions:
+    - qualification fails
+    - immutable EXP-09-capable image digest is missing
+    - input manifest verification fails
+    - a fault case exceeds its hard timeout
+    - rank cleanup fails
+    - any required artifact stage-out fails

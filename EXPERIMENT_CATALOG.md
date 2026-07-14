@@ -296,14 +296,14 @@ pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 | ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
 | --- | --- | --- | ---: | --- | ---: | --- |
 | EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-A2` | 1.5-3.0 | accepted |
-| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.0-2.0 | proposed |
+| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.0-2.0 | accepted |
 | EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
 | EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-A1` | 0.5-1.0 | proposed |
 | EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
 | EXP-06 | Profiler triangulation | PyTorch/NVIDIA tools | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
-| EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 2.0-4.0 | proposed |
-| EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-A2` | 1.0-2.0 | proposed |
-| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.5-3.0 | proposed |
+| EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 2.0-4.0 | accepted |
+| EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-A2` | 1.0-2.0 | accepted |
+| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.5-3.0 | accepted |
 | EXP-10 | Runpod NVLink P2P and NCCL communication | NCCL/NVIDIA tools | 2 | Runpod `RUNPOD-A100-SXM2` | 1.5-3.0 | proposed |
 | EXP-11 | Tensor plus sequence parallelism | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 2.0-4.0 | proposed |
 | EXP-12 | Pipeline schedules and bubble size | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
@@ -377,17 +377,17 @@ Current AWS run units:
 | `QUAL-A1` | Shared AWS qualification | `AWS-A1` | planned | One-GPU host, image, storage, SSM, and smoke-test qualification |
 | `QUAL-A2` | Shared AWS qualification | `AWS-A2` | in preparation | Two-GPU host, one-/two-visible-GPU masks, image, storage, SSM, topology, P2P, and NCCL smoke qualification |
 | `EXP-01-A2` | EXP-01 | `AWS-A2` | accepted, in preparation | AWS PCIe P2P and NCCL baseline |
-| `EXP-02-A2V1` | EXP-02 | `AWS-A2`, one visible GPU | proposed | Full precision and Tensor Core sweep on the acquired AWS-A2 host |
-| `EXP-02-A2V2` | EXP-02 | `AWS-A2`, two visible GPUs | proposed | Bounded two-rank DDP precision check after EXP-01-A2 |
+| `EXP-02-A2V1` | EXP-02 | `AWS-A2`, one visible GPU | accepted, in preparation | Full precision and Tensor Core sweep on the acquired AWS-A2 host |
+| `EXP-02-A2V2` | EXP-02 | `AWS-A2`, two visible GPUs | accepted, in preparation | Bounded two-rank DDP precision check after EXP-01-A2 |
 | `EXP-03-A1` | EXP-03 | `AWS-A1` | proposed | Microbatch and accumulation sweep |
 | `EXP-04-A1` | EXP-04 | `AWS-A1` | proposed | Activation checkpointing/recomputation sweep |
 | `EXP-05-A1` | EXP-05 | `AWS-A1` | proposed | SDPA, FlashAttention, and fusion sweep |
 | `EXP-06-A1` | EXP-06 | `AWS-A1` | proposed | Profiler triangulation |
-| `EXP-07-A2V1` | EXP-07 | `AWS-A2`, one visible GPU | proposed | DDP one-rank baseline on the acquired AWS-A2 host |
-| `EXP-07-A2V2` | EXP-07 | `AWS-A2`, two visible GPUs | proposed | DDP two-rank scaling and communication-overlap point |
-| `EXP-08-A2V2` | EXP-08 | `AWS-A2`, two visible GPUs | proposed | FSDP/DDP memory and communication comparison |
-| `EXP-09-A2V1` | EXP-09 | `AWS-A2`, one visible GPU | proposed | One-rank failure and input-pipeline cases on the acquired AWS-A2 host |
-| `EXP-09-A2V2` | EXP-09 | `AWS-A2`, two visible GPUs | proposed | Distributed fault cases that require two ranks |
+| `EXP-07-A2V1` | EXP-07 | `AWS-A2`, one visible GPU | accepted, in preparation | DDP one-rank baseline on the acquired AWS-A2 host |
+| `EXP-07-A2V2` | EXP-07 | `AWS-A2`, two visible GPUs | accepted, in preparation | DDP two-rank scaling and communication-overlap point |
+| `EXP-08-A2V2` | EXP-08 | `AWS-A2`, two visible GPUs | accepted, in preparation | FSDP/DDP memory and communication comparison |
+| `EXP-09-A2V1` | EXP-09 | `AWS-A2`, one visible GPU | accepted, in preparation | One-rank failure and input-pipeline cases on the acquired AWS-A2 host |
+| `EXP-09-A2V2` | EXP-09 | `AWS-A2`, two visible GPUs | accepted, in preparation | Distributed fault cases that require two ranks |
 
 ## Mandatory pre-run qualification
 
@@ -500,6 +500,10 @@ claiming that a named real company disclosed the incident.
 
 **Planned compute:** AWS `AWS-A2` only.
 
+**Educational goal:** Learn how to turn raw GPU topology, peer-access, P2P
+bandwidth/latency, and NCCL collective measurements into a concrete explanation
+of two-GPU communication behavior on one PCIe server.
+
 **Scenario (exam style):** A two-GPU EC2 training job scales poorly. The team
 must determine whether the GPUs have a working GPUDirect P2P path, establish the
 path's latency and bandwidth, and then decide whether the job's NCCL messages
@@ -530,6 +534,10 @@ GPU for the full precision and Tensor Core sweep, then `EXP-02-A2V2` with two
 visible GPUs for a bounded DDP check after the AWS communication baseline is
 qualified. `EXP-02-A2V1` is billed as an AWS-A2 host and must not be reported
 as an exact one-GPU-instance measurement.
+
+**Educational goal:** Learn how precision modes, Tensor Core eligibility,
+numerical stability, and DDP communication interact so a faster precision choice
+is backed by both performance and correctness evidence.
 
 **Scenario (exam style):** A financial-services company moves LLM training to a
 new NVIDIA GPU generation. FP32 training is stable but expensive, while an FP16
@@ -578,6 +586,10 @@ changes the compute-to-communication balance in DDP.
 
 **Planned compute:** `AWS-A1` only.
 
+**Educational goal:** Learn how microbatch size, accumulation steps, and
+effective global batch are related, and how to improve throughput without
+accidentally changing the optimization problem.
+
 **Scenario (exam style):** A retailer doubles its training GPU count but keeps
 the old microbatch and accumulation settings. Throughput improves, yet the
 effective global batch doubles and the loss curve no longer matches the
@@ -608,6 +620,9 @@ large batch unless loss normalization and synchronization are correct.
 
 **Planned compute:** `AWS-A1`.
 
+**Educational goal:** Learn when recomputing activations is a good memory trade,
+how much memory it saves, and how to measure the added compute cost.
+
 **Scenario (exam style):** A legal-technology company can train its model at a
 4K-token context, but an 8K-token run OOMs. Buying more GPUs is possible but
 expensive. Which activations should be recomputed, how much memory should be
@@ -629,6 +644,10 @@ trade-off than recomputing everything for many workloads.
 ### EXP-05: PyTorch SDPA/FlashAttention and operator fusion
 
 **Planned compute:** `AWS-A1`.
+
+**Educational goal:** Learn how to distinguish attention-backend improvements
+from general graph/operator fusion effects using kernel evidence, memory
+measurements, and correctness checks.
 
 **Scenario (exam style):** An AI startup's profiler shows thousands of short
 CUDA kernels separated by launch gaps, and eager attention materializes a large
@@ -678,6 +697,10 @@ backend sweep unless attention itself is the independent variable.
 
 **Planned compute:** `AWS-A1`.
 
+**Educational goal:** Learn which profiler answers which performance question,
+and how to connect framework-level, system-timeline, and kernel-level evidence
+into one bottleneck diagnosis.
+
 **Scenario (exam style):** A media company sees only 35% average GPU utilization
 during LLM training. One engineer suspects slow Python launches, another
 suspects an inefficient CUDA kernel, and a third suspects synchronization.
@@ -704,6 +727,10 @@ objectives; this experiment teaches when each profiler is appropriate.
 GPU and `EXP-07-A2V2` with two visible GPUs on the same physical AWS-A2 profile.
 No distributed job spans instances, and there is no current four-GPU AWS DDP
 run.
+
+**Educational goal:** Learn how to evaluate DDP speedup, communication overlap,
+bucket behavior, and local-batch effects when moving from one rank to two ranks
+on one server.
 
 **Scenario (exam style):** A software company expects two GPUs to train nearly
 twice as fast as one, but measures a weak speedup. GPU timelines show
@@ -736,6 +763,10 @@ that point later requires a new decision and a distinct AWS-A4 queue.
 
 **Planned compute:** AWS `AWS-A2` only.
 
+**Educational goal:** Learn what FSDP shards, which extra collectives it adds,
+and how to decide whether memory savings are worth the throughput and
+complexity cost when the model already fits.
+
 **Scenario (exam style):** A healthcare company can train its model with DDP on
 two GPUs, but assumes full sharding must be better because it uses less memory.
 Which states does FSDP shard, which extra collectives appear, and why can the
@@ -764,6 +795,10 @@ a model that already fits comfortably.
 GPU for one-rank failure and input-pipeline cases, then `EXP-09-A2V2` with two
 visible GPUs for distributed faults such as mismatched collectives, rank
 stragglers, and NCCL timeout evidence.
+
+**Educational goal:** Learn to identify common training and distributed failure
+classes from logs, utilization, memory, timeout, numerical, and timeline
+evidence, then verify that the corrective action actually fixes the root cause.
 
 **Scenario (exam style):** A two-GPU job alternates between hanging in a
 collective, OOMing during backward, producing NaNs after enabling FP16, and
@@ -797,6 +832,10 @@ the pipeline rather than NCCL is corrected.
 
 **Planned compute:** Runpod `RUNPOD-A100-SXM2` only.
 
+**Educational goal:** Learn how to qualify an A100 SXM/NVLink host and explain
+how NVLink topology changes P2P and collective behavior compared with the AWS
+PCIe baseline.
+
 **Scenario (exam style):** A team rents an A100 SXM Pod for model-parallel
 training, but the product name alone does not prove the selected pair is linked
 or that NCCL uses the intended path. It needs one communication qualification
@@ -823,6 +862,10 @@ set communication expectations for EXP-11 through EXP-14.
 **Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
 visible GPUs on the same billed two-GPU Pod so the TP=1 baseline and TP=2 run
 share the exact GPU type and host environment.
+
+**Educational goal:** Learn which parts of a transformer layer tensor
+parallelism shards, how sequence parallelism reduces activation pressure, and
+which collectives those choices introduce.
 
 **Scenario (exam style):** An enterprise enables TP=2 on a model that already
 fits on one GPU and expects a twofold speedup. Instead, per-rank GEMMs shrink
@@ -852,6 +895,9 @@ collective pattern; it does not consume another multiplicative GPU dimension.
 visible GPUs on the same billed Pod so PP=1 and PP=2 share the image, GPU type,
 and host environment.
 
+**Educational goal:** Learn how pipeline stage balance, microbatch count, and
+schedule choice determine bubble overhead, activation memory, and throughput.
+
 **Scenario (exam style):** A pharmaceutical company partitions a deep model
 across two GPUs, yet the trace shows one stage idle while the other works. The
 global batch cannot grow without limit. How should the team choose microbatch
@@ -877,6 +923,10 @@ the throughput limit.
 **Planned compute:** Runpod `RUNPOD-A100-SXM2` only. Use one and then two
 visible GPUs on the same billed Pod.
 
+**Educational goal:** Learn when context parallelism becomes useful for long
+sequence training, and how to compare its activation-memory savings against
+attention communication cost.
+
 **Scenario (exam style):** A document-intelligence company increases context
 length from 4K to 32K tokens. Parameters still fit, but attention activations
 OOM even with a small microbatch. Should it use recomputation, tensor
@@ -901,6 +951,10 @@ the crossover is the important result.
 ### EXP-14: TP=2 x DP=2 for model width and throughput
 
 **Planned compute:** Runpod `RUNPOD-A100-SXM4` only.
+
+**Educational goal:** Learn how tensor-parallel and data-parallel process
+groups compose in a four-rank hybrid, and how to reason about memory,
+throughput, and communication trade-offs across DP=4, TP=4, and TP=2 x DP=2.
 
 **Scenario (exam style):** A company has four peer-accessible NVIDIA GPUs and a
 medium-size LLM. DP=4 gives high replica throughput but high per-GPU state
@@ -1028,13 +1082,13 @@ experiments have already been accepted and implemented.
 | ---: | --- | ---: | --- | --- |
 | 1 | `QUAL-A2` | 1, 2 | in preparation | Fixed-image pull, cache-volume mount, SSM access, Docker root validation, topology capture, P2P smoke, NCCL smoke, and visibility-mask smoke for `V1` and `V2` |
 | 2 | `EXP-01-A2` | 2 | accepted, in preparation | Use ECR image digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`; stage out `artifacts/EXP-01/`; keep the instance available for the agreed manual inspection window |
-| 3 | `EXP-02-A2V1` | 1 | proposed, not ready | Accept EXP-02, implement the one-visible-GPU precision sweep, and validate non-GPU tests |
-| 4 | `EXP-02-A2V2` | 2 | proposed, not ready | Implement the bounded DDP precision check with constant effective global batch |
-| 5 | `EXP-07-A2V1` | 1 | proposed, not ready | Accept EXP-07, implement the one-rank baseline path, and validate non-GPU tests |
-| 6 | `EXP-07-A2V2` | 2 | proposed, not ready | Implement the two-rank DDP scaling and communication-overlap profile |
-| 7 | `EXP-08-A2V2` | 2 | proposed, not ready | Accept EXP-08, implement DDP/FSDP correctness and memory checks, and validate state-dict handling |
-| 8 | `EXP-09-A2V1` | 1 | proposed, not ready | Accept EXP-09 and implement one-rank fault/input-pipeline cases with bounded timeouts |
-| 9 | `EXP-09-A2V2` | 2 | proposed, not ready | Implement distributed fault cases with bounded timeouts and cleanup |
+| 3 | `EXP-02-A2V1` | 1 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate GPU smoke |
+| 4 | `EXP-02-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate DDP smoke |
+| 5 | `EXP-07-A2V1` | 1 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate one-rank smoke |
+| 6 | `EXP-07-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate DDP smoke |
+| 7 | `EXP-08-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate DDP/FSDP smoke |
+| 8 | `EXP-09-A2V1` | 1 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate one-rank fault smoke |
+| 9 | `EXP-09-A2V2` | 2 | accepted, not ready | Dry-run plan and measured executor exist; rebuild image, record digest, and validate distributed fault smoke |
 
 Use separate exact-size Runpod sessions after local preparation is complete:
 

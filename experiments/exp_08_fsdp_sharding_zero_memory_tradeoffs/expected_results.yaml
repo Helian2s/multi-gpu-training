@@ -1,0 +1,55 @@
+schema_version: 1
+experiment_id: EXP-08
+
+correctness_gates:
+  - id: aws_a2_qualified
+    requirement: "AWS-A2 qualification, image identity, two-GPU visibility, and input manifest verification are present."
+  - id: ddp_baseline_valid
+    requirement: "The DDP baseline completes with finite loss on both ranks before FSDP variants run."
+  - id: fsdp_api_recorded
+    requirement: "The FSDP API choice and any fallback reason are recorded."
+  - id: fsdp_round_trip
+    requirement: "Every FSDP variant completes forward, backward, optimizer step, and checkpoint round trip."
+  - id: comparable_state
+    requirement: "Compared variants use the same model revision, input batches, checkpoint, optimizer settings, and seeds."
+  - id: no_artificial_oom
+    requirement: "No model-size change is introduced solely to manufacture an OOM result."
+
+hypotheses:
+  - id: H1
+    metric: per_rank_model_state_memory
+    baseline: EXP-08-A2V2-ddp-replicated-baseline
+    comparison: EXP-08-A2V2-fsdp-full-shard
+    expected_direction: decrease
+    threshold: null
+    rationale: "Full sharding should reduce persistent per-rank parameter, gradient, and optimizer-state memory relative to DDP."
+    confirm_when: "FSDP full sharding reduces the expected memory categories and peak memory attribution is complete."
+    reject_when: "FSDP does not reduce the expected memory categories on this workload."
+    inconclusive_when: "Memory category attribution or rank-level memory evidence is incomplete."
+  - id: H2
+    metric: training_throughput
+    baseline: EXP-08-A2V2-ddp-replicated-baseline
+    comparison: fsdp_variants
+    expected_direction: bounded
+    threshold: null
+    rationale: "FSDP can add all-gather, reduce-scatter, initialization, and materialization overhead even while saving memory."
+    confirm_when: "Any FSDP slowdown is explained by measured communication, materialization, initialization, or checkpoint overhead."
+    reject_when: "Measured performance does not match the recorded communication or initialization evidence."
+    inconclusive_when: "Communication, initialization, or checkpoint evidence is missing."
+  - id: H3
+    metric: checkpoint_round_trip
+    baseline: EXP-08-A2V2-ddp-replicated-baseline
+    comparison: fsdp_variants
+    expected_direction: bounded
+    threshold: null
+    rationale: "Sharded state requires explicit state-dict handling before the strategy is operationally acceptable."
+    confirm_when: "Every FSDP variant saves and reloads the declared state-dict format and resumes a bounded training step."
+    reject_when: "A sharded variant cannot complete state-dict save/load/resume under the pinned runtime."
+    inconclusive_when: "Checkpoint format, file inventory, or resume evidence is incomplete."
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - Compared runs use different immutable images, model inputs, or hardware topology.
+  - FSDP fallback behavior is omitted.
+  - Required artifacts are not staged out durably.

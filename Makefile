@@ -11,7 +11,7 @@ AWS_EXP01_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
 AWS_EXP01_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 AWS_EXP01_HOLD_ARG = $(if $(HOLD_OPEN_ON_EXIT),--hold-open-on-exit,)
 
-.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts
+.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a2-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts
 
 help:
 	@echo "make check"
@@ -32,9 +32,10 @@ help:
 	@echo "make prepare-environment"
 	@echo "make prepare-inputs"
 	@echo "make verify-inputs"
+	@echo "make exp-a2-dry-run"
 
 check:
-	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py experiments/_template/analyze.py experiments/exp_01_aws_pcie_p2p_nccl_communication/analyze.py
+	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py common/experiment_runner.py common/pytorch_executor.py experiments/_template/analyze.py experiments/exp_*/analyze.py experiments/exp_*/run_exp*.py
 	$(PYTHON) scripts/new_experiment.py --help
 	$(PYTHON) -m unittest discover -s tests
 	$(PYTHON) scripts/validate_repo.py
@@ -57,6 +58,12 @@ prepare-inputs:
 verify-inputs:
 	test -x "$(PREPARATION_PYTHON)" || (echo "run 'make prepare-environment' first"; exit 2)
 	$(PREPARATION_PYTHON) scripts/prepare_inputs.py --config configs/inputs.lock.yaml --verify-only
+
+exp-a2-dry-run:
+	$(PYTHON) experiments/exp_02_mixed_precision_tensor_cores/run_exp02.py --dry-run
+	$(PYTHON) experiments/exp_07_ddp_scaling_communication_overlap/run_exp07.py --dry-run
+	$(PYTHON) experiments/exp_08_fsdp_sharding_zero_memory_tradeoffs/run_exp08.py --dry-run
+	$(PYTHON) experiments/exp_09_controlled_troubleshooting_failure_diagnosis/run_exp09.py --dry-run
 
 build-pytorch-image:
 	docker buildx build --platform "$(IMAGE_PLATFORM)" --load \

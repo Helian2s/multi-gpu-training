@@ -1,0 +1,57 @@
+schema_version: 1
+experiment_id: EXP-09
+
+correctness_gates:
+  - id: aws_a2_qualified
+    requirement: "AWS-A2 qualification, image identity, GPU visibility, and input manifest verification are present."
+  - id: healthy_smoke_passes
+    requirement: "The healthy smoke case passes before intentional fault cases run."
+  - id: bounded_faults
+    requirement: "Each intentional fault exits within its hard timeout."
+  - id: expected_failure_class
+    requirement: "Controlled failures are classified as expected failures rather than infrastructure failures."
+  - id: recovery_proof
+    requirement: "Every diagnosed-and-recovered case includes a successful corrected follow-up run."
+  - id: rank_cleanup
+    requirement: "No distributed rank remains alive after each fault case."
+  - id: stage_out_on_failure
+    requirement: "Artifacts are staged out even when a case intentionally fails."
+
+hypotheses:
+  - id: H1
+    metric: root_cause_classification_accuracy
+    baseline: EXP-09-A2V1-healthy-smoke
+    comparison: controlled_fault_cases
+    expected_direction: bounded
+    threshold: null
+    rationale: "Known injected faults should produce distinct memory, numerical, input, or distributed evidence patterns."
+    confirm_when: "Each fault is classified from logs, telemetry, and exit behavior without relying on prior knowledge of the injection."
+    reject_when: "Evidence is ambiguous enough that the root cause cannot be separated from other failure classes."
+    inconclusive_when: "Logs, memory telemetry, utilization, timeout data, or image identity are incomplete."
+  - id: H2
+    metric: corrective_action_recovery
+    baseline: failing_case
+    comparison: corrected_follow_up_case
+    expected_direction: bounded
+    threshold: null
+    rationale: "A diagnostic is useful only when the proposed corrective action removes the observed symptom."
+    confirm_when: "Corrected follow-up cases complete successfully and remove the measured symptom."
+    reject_when: "Corrected cases retain the same failure signature or introduce a new uncontrolled failure."
+    inconclusive_when: "The corrected follow-up run or comparable telemetry is missing."
+  - id: H3
+    metric: timeout_and_cleanup_safety
+    baseline: fault_case_timeout_contract
+    comparison: observed_fault_case_runtime
+    expected_direction: bounded
+    threshold: null
+    rationale: "Troubleshooting experiments must not leave a billable host stuck in an unbounded distributed hang."
+    confirm_when: "Every intentional distributed fault exits within the declared timeout and leaves no live ranks."
+    reject_when: "Any fault case exceeds its timeout or leaves orphaned ranks."
+    inconclusive_when: "Process cleanup evidence is missing."
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - A fault case can hang beyond its configured timeout.
+  - Controlled failures cannot be distinguished from infrastructure failures.
+  - Required artifacts are not staged out durably.

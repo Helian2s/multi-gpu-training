@@ -1,0 +1,55 @@
+schema_version: 1
+experiment_id: EXP-07
+
+correctness_gates:
+  - id: aws_a2_qualified
+    requirement: "AWS-A2 qualification, image identity, GPU visibility, and input manifest verification are present."
+  - id: rank_count_matches_visibility
+    requirement: "DDP world size exactly matches visible GPU count for each run unit."
+  - id: matched_steps
+    requirement: "All ranks complete the same number of optimizer steps."
+  - id: finite_rank_loss
+    requirement: "Every rank reports finite loss for every measured variant."
+  - id: comparable_state
+    requirement: "Comparable variants use the same model revision, input batches, checkpoint, optimizer settings, and seeds."
+  - id: no_sync_correctness
+    requirement: "Variants using no_sync synchronize gradients before every optimizer step."
+
+hypotheses:
+  - id: H1
+    metric: two_rank_scaling_efficiency
+    baseline: EXP-07-A2V1-one-rank-fixed-local
+    comparison: EXP-07-A2V2-two-rank-fixed-local
+    expected_direction: increase
+    threshold: null
+    rationale: "Two ranks should increase throughput when local work per rank is large enough to hide some all-reduce time."
+    confirm_when: "Two-rank throughput improves and profiler evidence attributes remaining inefficiency to communication and overlap limits."
+    reject_when: "Two-rank throughput does not improve and the result cannot be explained by communication, local work, or correctness constraints."
+    inconclusive_when: "Profiler timelines, rank logs, or loss checks are incomplete."
+  - id: H2
+    metric: communication_overlap
+    baseline: EXP-07-A2V2-two-rank-bucket-default
+    comparison: bucket_size_variants
+    expected_direction: bounded
+    threshold: null
+    rationale: "Bucket size can affect readiness and overlap, but the best value depends on model structure and local compute."
+    confirm_when: "Bucket variants show measurable differences in all-reduce placement or overlap without violating correctness."
+    reject_when: "Bucket changes have no measurable effect and profiler evidence shows communication is not on the critical path."
+    inconclusive_when: "Bucket readiness or timeline evidence is missing."
+  - id: H3
+    metric: synchronization_frequency
+    baseline: EXP-07-A2V2-two-rank-fixed-local
+    comparison: EXP-07-A2V2-two-rank-no-sync-accumulation
+    expected_direction: bounded
+    threshold: null
+    rationale: "Local accumulation should reduce all-reduce frequency when implemented correctly."
+    confirm_when: "The no_sync variant reduces synchronization frequency and records equivalent optimizer-step behavior."
+    reject_when: "The no_sync variant changes optimizer semantics or fails loss/correctness gates."
+    inconclusive_when: "Synchronization boundaries or optimizer-step evidence are incomplete."
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - A two-rank run spans multiple hosts.
+  - Compared runs use different immutable images, model inputs, or hardware topology.
+  - Required artifacts are not staged out durably.

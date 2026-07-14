@@ -1,0 +1,197 @@
+schema_version: 1
+
+experiment:
+  id: EXP-02
+  slug: mixed_precision_tensor_cores
+  title: Mixed precision and Tensor Cores in distributed training
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: pytorch
+  image: null # Rebuild and publish the PyTorch image from accepted source before launch.
+
+hardware:
+  compute_profile: AWS-A2
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.12xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 2
+  visible_gpu_count: null
+  visible_devices: []
+  single_node: true
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/exp01_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: benchmark
+  overrides:
+    input_lock: ../../configs/inputs.lock.yaml
+    model_id: Qwen/Qwen3-1.7B-Base
+    model_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+    dataset_id: Salesforce/wikitext
+    dataset_configuration: wikitext-103-raw-v1
+    dataset_revision: b08601e04326c79dfdd32d625aee71d232d685c3
+    preprocessing_version: qwen3-wikitext-v1
+    training_mode: full_parameter_continued_pretraining
+    objective: causal_next_token_cross_entropy
+    sequence_length: 1024
+    warmup_optimizer_steps: 5
+    measured_optimizer_steps: 20
+    restore_checkpoint_between_variants: true
+
+sweep:
+  baseline: EXP-02-A2V1-fp32-reference
+  variants:
+    - id: EXP-02-A2V1-gemm-fp32-aligned
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: fp32
+      workload: gemm_microbenchmark
+      shape: tensor_core_aligned
+    - id: EXP-02-A2V1-gemm-fp32-misaligned
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: fp32
+      workload: gemm_microbenchmark
+      shape: deliberately_misaligned
+    - id: EXP-02-A2V1-gemm-tf32-aligned
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: tf32
+      workload: gemm_microbenchmark
+      shape: tensor_core_aligned
+    - id: EXP-02-A2V1-gemm-bf16-aligned
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: bf16
+      workload: gemm_microbenchmark
+      shape: tensor_core_aligned
+    - id: EXP-02-A2V1-gemm-fp16-aligned
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: fp16
+      workload: gemm_microbenchmark
+      shape: tensor_core_aligned
+      gradient_scaling: enabled
+    - id: EXP-02-A2V1-train-fp32-reference
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: fp32
+      workload: transformer_training
+      per_rank_microbatch_size: 1
+    - id: EXP-02-A2V1-train-tf32
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: tf32
+      workload: transformer_training
+      per_rank_microbatch_size: 1
+    - id: EXP-02-A2V1-train-bf16
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: bf16
+      workload: transformer_training
+      per_rank_microbatch_size: 1
+    - id: EXP-02-A2V1-train-fp16
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: fp16
+      workload: transformer_training
+      per_rank_microbatch_size: 1
+      gradient_scaling: enabled
+    - id: EXP-02-A2V1-train-fp8-candidate
+      run_unit: EXP-02-A2V1
+      visible_devices: [0]
+      precision: fp8
+      workload: transformer_training
+      admission_gate: native_transformer_engine_sm120_path_detected
+    - id: EXP-02-A2V2-ddp-fp32-reference
+      run_unit: EXP-02-A2V2
+      visible_devices: [0, 1]
+      precision: fp32
+      workload: transformer_training_ddp
+      per_rank_microbatch_size: 1
+      effective_global_batch_size: 2
+    - id: EXP-02-A2V2-ddp-bf16
+      run_unit: EXP-02-A2V2
+      visible_devices: [0, 1]
+      precision: bf16
+      workload: transformer_training_ddp
+      per_rank_microbatch_size: 1
+      effective_global_batch_size: 2
+    - id: EXP-02-A2V2-ddp-fp16
+      run_unit: EXP-02-A2V2
+      visible_devices: [0, 1]
+      precision: fp16
+      workload: transformer_training_ddp
+      per_rank_microbatch_size: 1
+      effective_global_batch_size: 2
+      gradient_scaling: enabled
+  fixed:
+    host_profile: AWS-A2
+    physical_instance_type: g7e.12xlarge
+    single_node: true
+    seeds: [1337, 1338, 1339]
+    precision_default: none
+    unsupported_precision_handling: record_unsupported_or_fallback
+
+execution:
+  launcher: python experiments/exp_02_mixed_precision_tensor_cores/run_exp02.py --execute
+  planning_command: python experiments/exp_02_mixed_precision_tensor_cores/run_exp02.py --dry-run
+  environment:
+    NCCL_DEBUG: INFO
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+  timeout_seconds: 5400
+
+measurements:
+  required:
+    - immutable image digest
+    - driver, CUDA, PyTorch, NCCL, and Transformer Engine versions
+    - GPU visibility and topology
+    - GEMM latency and throughput by shape and precision
+    - training tokens per second and step time
+    - Tensor Core eligible kernel evidence
+    - peak allocated and reserved GPU memory
+    - loss and gradient comparison to FP32 reference
+    - non-finite gradient and overflow evidence
+    - DDP scaling efficiency and NCCL communication time
+  profilers:
+    - torch-profiler
+    - nsight-systems-optional
+    - nvidia-smi
+  repetitions: 3
+
+correctness:
+  gates:
+    - mandatory AWS-A2 qualification passes
+    - every compared variant restores the same checkpoint and input batches
+    - FP32 reference produces finite loss and gradients
+    - TF32 and BF16 losses remain within predeclared tolerance of FP32 reference
+    - FP16 either remains finite with gradient scaling or is recorded as numerically unstable
+    - unsupported or fallback FP8 is excluded from native-precision comparisons
+    - every DDP run uses exactly two ranks on one host
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-02/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 2.0
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: 15.0
+  stop_conditions:
+    - qualification fails
+    - immutable EXP-02-capable image digest is missing
+    - input manifest verification fails
+    - any required artifact stage-out fails
+    - bounded run timeout is reached

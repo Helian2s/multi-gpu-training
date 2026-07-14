@@ -1,0 +1,55 @@
+schema_version: 1
+experiment_id: EXP-02
+
+correctness_gates:
+  - id: aws_a2_qualified
+    requirement: "AWS-A2 qualification, image identity, GPU visibility, and input manifest verification are present."
+  - id: fp32_reference_finite
+    requirement: "The FP32 reference produces finite loss and gradients."
+  - id: comparable_inputs
+    requirement: "Compared variants restore the same checkpoint, input batches, seeds, and optimizer settings."
+  - id: precision_tolerance
+    requirement: "TF32 and BF16 remain within the predeclared loss and gradient tolerance relative to FP32."
+  - id: unsupported_formats_excluded
+    requirement: "Unsupported or fallback low-precision formats are recorded but excluded from native-precision comparisons."
+  - id: ddp_two_rank_valid
+    requirement: "DDP precision variants run exactly two ranks on one AWS-A2 host and record NCCL datatype and bytes."
+
+hypotheses:
+  - id: H1
+    metric: tensor_core_eligible_throughput
+    baseline: EXP-02-A2V1-train-fp32-reference
+    comparison: reduced_precision_variants
+    expected_direction: increase
+    threshold: null
+    rationale: "Tensor-Core-compatible reduced precision should improve eligible GEMM and training throughput when the kernel path is native."
+    confirm_when: "Reduced-precision variants improve throughput and include kernel evidence for native accelerated execution while passing correctness gates."
+    reject_when: "Reduced precision fails correctness, falls back silently, or lacks evidence of native accelerated execution."
+    inconclusive_when: "Kernel evidence, precision mode, or image/runtime identity is missing."
+  - id: H2
+    metric: numerical_stability
+    baseline: EXP-02-A2V1-train-fp32-reference
+    comparison: bf16_and_fp16_variants
+    expected_direction: bounded
+    threshold: null
+    rationale: "BF16 keeps a wider exponent range than FP16, so it should be more robust for this fixed workload."
+    confirm_when: "BF16 stays finite and within tolerance while FP16 requires scaling or reports overflow/non-finite events."
+    reject_when: "BF16 violates tolerance or FP16 is equally stable without any observed numerical-risk evidence."
+    inconclusive_when: "Loss/gradient comparisons or overflow telemetry are incomplete."
+  - id: H3
+    metric: ddp_communication_fraction
+    baseline: EXP-02-A2V2-ddp-fp32-reference
+    comparison: EXP-02-A2V2-ddp-bf16
+    expected_direction: bounded
+    threshold: null
+    rationale: "Faster compute can make unchanged DDP communication a larger fraction of step time."
+    confirm_when: "The two-rank result records throughput, NCCL time, datatype, and bytes and explains whether communication share increases."
+    reject_when: "DDP communication evidence contradicts the compute-speedup explanation."
+    inconclusive_when: "NCCL timing, datatype, bytes, or rank logs are incomplete."
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - Compared runs use different immutable images or uncontrolled hardware topology.
+  - The run reports fallback precision as native accelerated execution.
+  - Required artifacts are not staged out durably.
