@@ -37,6 +37,6 @@ RUN python -m pip install --no-cache-dir -r /tmp/requirements-runtime.txt && \
 
 COPY common/ common/
 COPY configs/ configs/
-COPY experiments/_template/ experiments/_template/
+COPY experiments/ experiments/
 COPY scripts/ scripts/
 COPY requirements-preparation.txt requirements-preparation.txt

@@ -223,12 +223,13 @@ def send_ssm_command(
     timeout_seconds: int,
     comment: str,
 ) -> int:
+    bash_commands = [f"/bin/bash -lc {shlex.quote(command)}" for command in commands]
     payload = {
         "InstanceIds": [instance_id],
         "DocumentName": "AWS-RunShellScript",
         "Comment": comment,
         "Parameters": {
-            "commands": commands,
+            "commands": bash_commands,
             "executionTimeout": [str(timeout_seconds)],
         },
     }

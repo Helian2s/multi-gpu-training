@@ -119,6 +119,11 @@ It was published as tag `exp01-20260714-98ed22f`; ECR reported the image as
 low, and 4 undefined findings inherited from the current NVIDIA-derived stack;
 the finding disposition still needs recorded review.
 
+The first EC2 launch using this digest validated G7e host access, SSM, ECR
+pull, and S3 stage-out, but failed before measurement because the image omitted
+the accepted EXP-01 directory and could not find `collect_exp01.sh`. Rebuild and
+record a replacement image digest before retrying EXP-01 measurement.
+
 The launch wrapper defaults to an AWS `RunInstances` dry run:
 
 ```bash

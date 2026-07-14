@@ -120,6 +120,14 @@ need recorded review. A local smoke check confirmed `p2pBandwidthLatencyTest`
 and `all_reduce_perf` are on `PATH`; executing the CUDA sample still fails
 locally with the expected missing/insufficient CUDA driver error.
 
+The first EC2 launch using this digest pulled successfully through
+`FinetuningGpuInstanceRole` and validated the G7e host driver/GPU visibility,
+but the container exited before running EXP-01 because this image omitted the
+accepted experiment directory and therefore did not contain
+`experiments/exp_01_aws_pcie_p2p_nccl_communication/collect_exp01.sh`. Do not
+reuse this digest for EXP-01 measurement; rebuild and publish a replacement
+PyTorch digest that copies accepted experiment implementations into the image.
+
 ## ECR Publication Smoke Test
 
 The local candidate images were pushed once to private ECR to verify
