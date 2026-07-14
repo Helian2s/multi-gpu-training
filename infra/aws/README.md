@@ -75,6 +75,35 @@ Official sources:
 - **Cost safety:** require project/run tags, maximum instance lifetime, verified
   stage-out, and stop/termination in success and failure paths.
 
+## EXP-01 preflight wrapper
+
+`exp01_preflight.py` is a read-only draft wrapper for the first AWS experiment.
+It verifies the selected account, Region, G/VT quota, `g7e.12xlarge` shape and
+Availability Zone offerings, current On-Demand price, ECR repository/image
+state, EC2 instance-role pull permissions, S3 artifact bucket, and budget
+envelope.
+
+EXP-01 writes run artifacts under:
+
+```text
+s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-01/
+```
+
+The EC2 instance role is limited to this project artifact prefix for EXP-01
+stage-out rather than receiving broad bucket write access.
+
+Run it locally with:
+
+```bash
+make aws-exp01-preflight
+```
+
+The wrapper intentionally does not call `ec2 run-instances`, publish images, or
+change AWS resources. A later launch wrapper must keep the same gates and add
+explicit launch confirmation, maximum lifetime enforcement, artifact stage-out,
+and termination-on-failure behavior before it is allowed to start a billable
+host.
+
 ## Admission checklist
 
 Before the first measured experiment, record and verify:

@@ -1,0 +1,101 @@
+schema_version: 1
+
+experiment:
+  id: EXP-01
+  slug: aws_pcie_p2p_nccl_communication
+  title: AWS PCIe P2P and NCCL communication
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: pytorch
+  image: null # Fill with the immutable EXP-01 ECR digest after the image includes p2pBandwidthLatencyTest.
+
+hardware:
+  compute_profile: AWS-G7E-2
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.12xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 2
+  visible_gpu_count: 2
+  visible_devices: [0, 1]
+  single_node: true
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/exp01_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: communication
+  overrides: {}
+
+sweep:
+  baseline: default_nccl_environment
+  variants:
+    - topology_inventory
+    - cuda_p2p_bandwidth_latency
+    - nccl_all_reduce
+    - nccl_reduce_scatter
+    - nccl_all_gather
+    - nccl_broadcast
+    - nccl_all_to_all
+  fixed:
+    visible_gpus: [0, 1]
+    nccl_min_bytes: 8
+    nccl_max_bytes: 1073741824
+    nccl_step_factor: 2
+    nccl_warmup_iterations: 20
+    nccl_iterations: 100
+    nccl_check_iterations: 1
+
+execution:
+  launcher: bash experiments/exp_01_aws_pcie_p2p_nccl_communication/collect_exp01.sh
+  environment:
+    CUDA_VISIBLE_DEVICES: "0,1"
+    NCCL_DEBUG: INFO
+    NCCL_DEBUG_SUBSYS: INIT,COLL,GRAPH
+  timeout_seconds: 3600
+
+measurements:
+  required:
+    - nvidia-smi inventory
+    - nvidia-smi topology matrix
+    - CUDA peer-to-peer bandwidth and latency
+    - NCCL collective algorithm and bus bandwidth
+    - NCCL collective latency by message size
+    - NCCL debug output
+  profilers:
+    - nvidia-smi
+    - nccl-tests
+    - p2pBandwidthLatencyTest
+    - nsight-systems-optional
+  repetitions: 3
+
+correctness:
+  gates:
+    - exactly two visible NVIDIA GPUs
+    - p2pBandwidthLatencyTest exits successfully
+    - every required nccl-tests command exits successfully
+    - NCCL reports GPU transport and no CPU-only fallback
+    - immutable image digest and EC2 instance metadata are recorded
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-01/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 3.0
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: 15.0
+  stop_conditions:
+    - qualification fails
+    - artifact stage-out fails
+    - instance lifetime exceeds 90 minutes
+    - estimated instance cost exceeds 15 USD

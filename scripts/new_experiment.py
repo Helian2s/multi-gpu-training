@@ -71,7 +71,11 @@ def main() -> None:
     require_accepted_catalog_entry(args.experiment_id)
     if destination.exists():
         raise SystemExit(f"destination already exists: {destination}")
-    shutil.copytree(TEMPLATE_DIRECTORY, destination)
+    shutil.copytree(
+        TEMPLATE_DIRECTORY,
+        destination,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+    )
     replace_placeholders(destination, args.experiment_id, args.slug, args.title)
     print(destination.relative_to(REPOSITORY_ROOT))
 

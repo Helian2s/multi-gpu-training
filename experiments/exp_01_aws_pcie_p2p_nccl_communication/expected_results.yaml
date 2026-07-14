@@ -1,0 +1,41 @@
+schema_version: 1
+experiment_id: EXP-01
+
+correctness_gates:
+  - id: two_visible_gpus
+    requirement: The container sees exactly two NVIDIA GPUs matching the EC2 host inventory.
+  - id: p2p_tool_passes
+    requirement: "CUDA Samples `p2pBandwidthLatencyTest` completes without an error exit."
+  - id: nccl_tests_pass
+    requirement: "Required `nccl-tests` collectives complete over both visible GPUs without timeout or data-check failure."
+  - id: topology_recorded
+    requirement: "`nvidia-smi -L`, `nvidia-smi topo -m`, driver, CUDA, NCCL, and image digest are recorded in the run artifact."
+
+hypotheses:
+  - id: H1
+    metric: p2p_bandwidth_and_latency
+    baseline: host_topology
+    comparison: cuda_peer_access_matrix
+    expected_direction: bounded
+    threshold: null
+    rationale: G7e exposes two PCIe-connected GPUs, so peer access and P2P measurements should be consistent with the observed PCIe topology rather than NVLink behavior.
+    confirm_when: Peer-access capability and measured P2P bandwidth/latency agree with the recorded topology and both transfer directions are captured.
+    reject_when: Peer access is unavailable, asymmetric without a topology explanation, or the P2P tool cannot run on the qualified host.
+    inconclusive_when: Provider permissions, driver mismatch, or missing CUDA Samples output prevents a complete peer-path measurement.
+  - id: H2
+    metric: nccl_collective_latency_and_bus_bandwidth
+    baseline: small_message_collectives
+    comparison: large_message_collectives
+    expected_direction: bounded
+    threshold: null
+    rationale: Small collectives should be dominated by latency and launch/control overhead, while large collectives should approach the bandwidth regime of the qualified PCIe peer path.
+    confirm_when: NCCL logs and metric curves show distinct small-message latency behavior and large-message bandwidth behavior consistent with the P2P baseline.
+    reject_when: Large-message collectives remain far below the measured peer path without an NCCL algorithm, topology, or host bottleneck explanation.
+    inconclusive_when: NCCL tests fail, report incomplete metrics, or use a fallback path that invalidates comparison with the P2P baseline.
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - The run uses fewer or more than two visible GPUs.
+  - The EC2 instance type, GPU model, driver, image digest, or topology differs from the accepted AWS-G7E-2 profile without a catalog update.
+  - The host is left running without stage-out and termination evidence.

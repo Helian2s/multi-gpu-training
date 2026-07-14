@@ -4,6 +4,8 @@
 inspected immutable NGC PyTorch `linux/amd64` digest. It contains the NVIDIA
 PyTorch, CUDA, NCCL, and profiler stack from the base image plus the minimal
 Hugging Face runtime packages needed for the accepted Qwen/WikiText workload.
+For EXP-01 it also builds and installs CUDA Samples
+`p2pBandwidthLatencyTest` from a pinned NVIDIA CUDA Samples commit.
 
 Build locally with:
 

@@ -293,7 +293,7 @@ pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 
 | ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
 | --- | --- | --- | ---: | --- | ---: | --- |
-| EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-G7E-2` | 1.5-3.0 | proposed |
+| EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-G7E-2` | 1.5-3.0 | accepted |
 | EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-G7E-1`; representative AWS `AWS-G7E-2` checks | 1.0-2.0 | proposed |
 | EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1, optional 2 | AWS `AWS-G7E-1`; optional AWS `AWS-G7E-2` DP sanity check | 1.0-2.0 | proposed |
 | EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-G7E-1` | 0.5-1.0 | proposed |

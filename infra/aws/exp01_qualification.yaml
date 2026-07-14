@@ -1,0 +1,42 @@
+schema_version: 1
+experiment_id: EXP-01
+description: AWS PCIe P2P and NCCL communication preflight.
+
+aws:
+  profile: finetuning-local
+  account_id: "037678282394"
+  region: us-west-2
+
+compute:
+  profile: AWS-G7E-2
+  instance_type: g7e.12xlarge
+  expected_vcpus: 48
+  expected_physical_gpus: 2
+  expected_gpu_name: RTX PRO Server 6000
+  purchase_option: on-demand
+
+image:
+  registry: 037678282394.dkr.ecr.us-west-2.amazonaws.com
+  repository: multi-gpu-training-pytorch
+  tag: null # Fill after rebuilding and publishing the EXP-01-capable image.
+  digest: null
+
+identity:
+  instance_profile: FinetuningGpuInstanceRole
+  role_name: FinetuningGpuInstanceRole
+
+artifacts:
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-01/
+
+budget:
+  maximum_instance_hours: 1.5
+  maximum_provider_cost_usd: 15.0
+
+safety:
+  launch_enabled: false
+  require_explicit_launch_confirmation: true
+  maximum_lifetime_minutes: 90
+  required_tags:
+    Project: NCP-GENL
+    Experiment: EXP-01
+    ManagedBy: codex-preflight

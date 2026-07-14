@@ -92,9 +92,19 @@ Minimal project Dockerfiles were added after the base-image inspection:
 | NeMo/Megatron | `multi-gpu-training-nemo:local` | `containers/nemo/Dockerfile` | Project scripts compile; explicit `PYTHONPATH` exposes `nemo`, `megatron.core`, and `megatron.bridge`; CPU forward/backward passes |
 
 The PyTorch Dockerfile installs only the minimal Hugging Face runtime packages
-needed on top of the NGC base. The NeMo Dockerfile does not install additional
-Python packages; it preserves the NVIDIA-pinned NeMo/Megatron stack and makes
-the required source paths explicit.
+needed on top of the NGC base and builds CUDA Samples
+`p2pBandwidthLatencyTest` from NVIDIA CUDA Samples commit
+`b7c5481c556c3fe98db060207ecaa41a4b9a9abc` for EXP-01. The NeMo Dockerfile
+does not install additional Python packages; it preserves the NVIDIA-pinned
+NeMo/Megatron stack and makes the required source paths explicit.
+
+An EXP-01-capable local PyTorch image was built as
+`multi-gpu-training-pytorch:exp01-local` with local image ID
+`sha256:b419251cdd5b503de26e242dab681364489329253421e77814dde4e75df8cfec`.
+It contains `/usr/local/bin/p2pBandwidthLatencyTest`, `nccl-tests`, Nsight
+tools, and the existing PyTorch runtime packages. Running the CUDA sample on
+the non-NVIDIA local workstation still fails with a missing/insufficient CUDA
+driver, which is expected; GPU execution remains provider-side qualification.
 
 ## ECR Publication Smoke Test
 
@@ -109,9 +119,10 @@ This is not an experiment-ready release tag.
 
 Both ECR image statuses were `ACTIVE` after push. ECR scan-on-push was enabled.
 The PyTorch scan completed and reported 60 critical, 178 high, 236 medium, 14
-low, and 4 undefined findings; these findings have not yet been adjudicated.
-The NeMo scan was still `IN_PROGRESS` at the time of this record. The tags are
-immutable and should remain publication test references only.
+low, and 4 undefined findings. The NeMo scan completed and reported 67
+critical, 286 high, 465 medium, 27 low, and 133 undefined findings. These
+findings have not yet been adjudicated. The tags are immutable and should
+remain publication test references only.
 
 Before accepting either image for recorded experiments:
 

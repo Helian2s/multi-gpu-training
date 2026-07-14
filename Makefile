@@ -7,19 +7,20 @@ NEMO_IMAGE ?= multi-gpu-training-nemo:local
 VCS_REF ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs build-pytorch-image build-nemo-image
+.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs build-pytorch-image build-nemo-image aws-exp01-preflight
 
 help:
 	@echo "make check"
 	@echo "make build-pytorch-image [PYTORCH_IMAGE=multi-gpu-training-pytorch:local]"
 	@echo "make build-nemo-image [NEMO_IMAGE=multi-gpu-training-nemo:local]"
+	@echo "make aws-exp01-preflight"
 	@echo "make new-experiment ID=EXP-NN SLUG=short_slug TITLE='Experiment title'"
 	@echo "make prepare-environment"
 	@echo "make prepare-inputs"
 	@echo "make verify-inputs"
 
 check:
-	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py experiments/_template/analyze.py
+	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py experiments/_template/analyze.py experiments/exp_01_aws_pcie_p2p_nccl_communication/analyze.py
 	$(PYTHON) scripts/new_experiment.py --help
 	$(PYTHON) -m unittest discover -s tests
 	$(PYTHON) scripts/validate_repo.py
@@ -56,3 +57,6 @@ build-nemo-image:
 		--build-arg BUILD_DATE="$(BUILD_DATE)" \
 		-f containers/nemo/Dockerfile \
 		-t "$(NEMO_IMAGE)" .
+
+aws-exp01-preflight:
+	$(PYTHON) infra/aws/exp01_preflight.py --config infra/aws/exp01_qualification.yaml
