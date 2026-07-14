@@ -1,5 +1,4 @@
 click==8.4.2
 huggingface_hub==1.23.0
-PyYAML==6.0.3
 tokenizers==0.22.2
 transformers==5.13.1
