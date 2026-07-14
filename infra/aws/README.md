@@ -98,20 +98,69 @@ Run it locally with:
 make aws-exp01-preflight
 ```
 
-The current recorded EXP-01 image is:
+The current recorded EXP-01 host and image are:
 
 ```text
+AMI: ami-04b4c34375925db5f
+AMI name: Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) 20260710
+Instance type: g7e.12xlarge
+Compute profile: AWS-G7E-2
+Security group: sg-0797f3b8520d4efa9
+Instance profile: FinetuningGpuInstanceRole
+Root EBS: 120 GiB gp3, encrypted, delete-on-termination
+Shutdown behavior: terminate
+IMDS: IMDSv2 required
+Image:
 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c
 ```
 
 It was published as tag `exp01-20260714-98ed22f`; ECR reported the image as
-`ACTIVE`, with scan-on-push still `IN_PROGRESS` immediately after publication.
+`ACTIVE`. Scan-on-push completed with 60 critical, 178 high, 236 medium, 14
+low, and 4 undefined findings inherited from the current NVIDIA-derived stack;
+the finding disposition still needs recorded review.
 
-The wrapper intentionally does not call `ec2 run-instances`, publish images, or
-change AWS resources. A later launch wrapper must keep the same gates and add
-explicit launch confirmation, maximum lifetime enforcement, artifact stage-out,
-and termination-on-failure behavior before it is allowed to start a billable
-host.
+The launch wrapper defaults to an AWS `RunInstances` dry run:
+
+```bash
+make aws-exp01-launch-dry-run
+```
+
+The dry run validates the EC2 request shape and permissions without creating an
+instance. A real launch is refused while `safety.launch_enabled` is `false`; if
+enabled in a later approved step, it also requires the exact confirmation
+phrase printed by the dry run. The generated user-data script includes the
+maximum lifetime watchdog, ECR pull, EXP-01 container execution, S3 artifact
+stage-out, and shutdown. Because the launch request sets
+`InstanceInitiatedShutdownBehavior=terminate`, successful or failed shutdown
+terminates the instance.
+
+For manual inspection of an already-running EXP-01 host, use the SSM operator
+helpers:
+
+```bash
+make aws-exp01-status
+make aws-exp01-monitor
+make aws-exp01-logs
+make aws-exp01-host-command CMD='nvidia-smi'
+make aws-exp01-container-command CMD='python -c "import torch; print(torch.cuda.device_count())"'
+make aws-exp01-artifacts
+```
+
+If more than one EXP-01 host is running, pass `INSTANCE_ID=i-...`. The
+container helpers target the predictable container name `exp01-${RUN_ID}`; pass
+`RUN_ID=...` only if the run ID is not available from the EC2 tag. Interactive
+shells use Session Manager and require the local `session-manager-plugin`:
+
+```bash
+make aws-ssm-plugin-check
+make aws-exp01-host-shell
+make aws-exp01-container-shell
+```
+
+For planned manual debugging, run the launch dry run with
+`HOLD_OPEN_ON_EXIT=1` first. If the later real launch is approved with the same
+option, the host stages artifacts to S3 and then stays available for manual
+inspection until the 90-minute watchdog or manual shutdown terminates it.
 
 ## Admission checklist
 

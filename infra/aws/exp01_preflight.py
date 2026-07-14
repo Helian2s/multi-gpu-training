@@ -233,6 +233,102 @@ def check_price(config: dict[str, Any]) -> Check:
     return ok("budget", f"{price:.5f} USD/hr x {budget['maximum_instance_hours']} hr = {projected:.2f} USD <= {limit:.2f} USD")
 
 
+def check_host_ami(config: dict[str, Any]) -> Check:
+    aws_cfg = config["aws"]
+    host = config["host"]
+    image_data = json_aws(
+        aws_cfg["profile"],
+        aws_cfg["region"],
+        "ec2",
+        "describe-images",
+        "--image-ids",
+        host["ami_id"],
+        allow_failure=True,
+    )
+    if image_data is None or not image_data.get("Images"):
+        return fail("host ami", f"{host['ami_id']} was not found")
+    image = image_data["Images"][0]
+    description = image.get("Description", "")
+    name = image.get("Name", "")
+    if image.get("State") != "available":
+        return fail("host ami", f"{host['ami_id']} state={image.get('State')}")
+    if image.get("Architecture") != "x86_64":
+        return fail("host ami", f"{host['ami_id']} architecture={image.get('Architecture')}")
+    if image.get("RootDeviceName") != host["root_device_name"]:
+        return fail("host ami", f"{host['ami_id']} root device={image.get('RootDeviceName')}")
+    if "G7e" not in description:
+        return fail("host ami", f"{host['ami_id']} description does not list G7e support")
+    if name != host["ami_name"]:
+        return warn("host ami", f"{host['ami_id']} name changed from {host['ami_name']!r} to {name!r}")
+    return ok("host ami", f"{host['ami_id']} {name}")
+
+
+def check_network(config: dict[str, Any]) -> list[Check]:
+    aws_cfg = config["aws"]
+    network = config["network"]
+    checks: list[Check] = []
+
+    subnet_data = json_aws(
+        aws_cfg["profile"],
+        aws_cfg["region"],
+        "ec2",
+        "describe-subnets",
+        "--subnet-ids",
+        *network["subnet_ids"],
+    )
+    subnets = subnet_data.get("Subnets", [])
+    subnet_ids = {subnet["SubnetId"] for subnet in subnets}
+    missing_subnets = sorted(set(network["subnet_ids"]) - subnet_ids)
+    if missing_subnets:
+        checks.append(fail("network subnets", f"missing {missing_subnets}"))
+    else:
+        azs = sorted(subnet["AvailabilityZone"] for subnet in subnets)
+        public_flags = {subnet["SubnetId"]: subnet.get("MapPublicIpOnLaunch") for subnet in subnets}
+        wrong_vpc = sorted(
+            subnet["SubnetId"]
+            for subnet in subnets
+            if subnet.get("VpcId") != network["vpc_id"]
+        )
+        if wrong_vpc:
+            checks.append(fail("network subnets", f"subnets outside {network['vpc_id']}: {wrong_vpc}"))
+        elif not all(public_flags.values()):
+            checks.append(warn("network subnets", f"not all subnets map public IP on launch: {public_flags}"))
+        else:
+            checks.append(ok("network subnets", f"{len(subnets)} default public subnets in {', '.join(azs)}"))
+
+    sg_data = json_aws(
+        aws_cfg["profile"],
+        aws_cfg["region"],
+        "ec2",
+        "describe-security-groups",
+        "--group-ids",
+        *network["security_group_ids"],
+    )
+    security_groups = sg_data.get("SecurityGroups", [])
+    ingress = [
+        permission
+        for group in security_groups
+        for permission in group.get("IpPermissions", [])
+    ]
+    wrong_sg_vpc = sorted(
+        group["GroupId"]
+        for group in security_groups
+        if group.get("VpcId") != network["vpc_id"]
+    )
+    if wrong_sg_vpc:
+        checks.append(fail("network security groups", f"security groups outside {network['vpc_id']}: {wrong_sg_vpc}"))
+    elif ingress:
+        checks.append(fail("network security groups", "expected no ingress rules"))
+    else:
+        checks.append(ok("network security groups", f"{', '.join(network['security_group_ids'])} has no ingress"))
+
+    if network.get("ssh_key_name") is None:
+        checks.append(ok("ssh access", "no SSH key configured; SSM-only access"))
+    else:
+        checks.append(warn("ssh access", f"SSH key configured: {network['ssh_key_name']}"))
+    return checks
+
+
 def check_ecr(config: dict[str, Any]) -> list[Check]:
     aws_cfg = config["aws"]
     image = config["image"]
@@ -309,6 +405,25 @@ def check_instance_role(config: dict[str, Any]) -> list[Check]:
         checks.append(ok("ecr pull policy", "BatchGetImage and GetDownloadUrlForLayer allowed"))
     else:
         checks.append(fail("ecr pull policy", json.dumps(decisions, sort_keys=True)))
+
+    token_simulation = json_aws(
+        aws_cfg["profile"],
+        aws_cfg["region"],
+        "iam",
+        "simulate-principal-policy",
+        "--policy-source-arn",
+        f"arn:aws:iam::{aws_cfg['account_id']}:role/{identity['role_name']}",
+        "--action-names",
+        "ecr:GetAuthorizationToken",
+        "--resource-arns",
+        "*",
+    )
+    token_decision = token_simulation["EvaluationResults"][0]["EvalDecision"]
+    if token_decision == "allowed":
+        checks.append(ok("ecr auth token", "GetAuthorizationToken allowed for Docker login"))
+    else:
+        checks.append(fail("ecr auth token", f"GetAuthorizationToken decision={token_decision}"))
+
     if decisions.get("ecr:PutImage") == "implicitDeny":
         checks.append(ok("ecr push denied", "instance role cannot PutImage"))
     else:
@@ -399,6 +514,27 @@ def check_artifact_role_access(config: dict[str, Any]) -> list[Check]:
     return checks
 
 
+def check_launch_safety(config: dict[str, Any]) -> list[Check]:
+    safety = config["safety"]
+    checks: list[Check] = []
+    if safety.get("instance_initiated_shutdown_behavior") == "terminate":
+        checks.append(ok("shutdown behavior", "instance-initiated shutdown terminates the instance"))
+    else:
+        checks.append(fail("shutdown behavior", "expected instance_initiated_shutdown_behavior=terminate"))
+
+    metadata = safety.get("metadata_options", {})
+    if metadata.get("http_tokens") == "required" and metadata.get("http_endpoint") == "enabled":
+        checks.append(ok("metadata options", "IMDSv2 is required"))
+    else:
+        checks.append(fail("metadata options", f"unexpected metadata options: {metadata}"))
+
+    if safety.get("launch_enabled"):
+        checks.append(warn("launch mode", "launch_enabled=true; wrapper still requires explicit confirmation"))
+    else:
+        checks.append(ok("launch mode", "launch disabled; wrapper dry-run only until explicitly enabled"))
+    return checks
+
+
 def render(checks: list[Check], as_json: bool) -> None:
     if as_json:
         print(json.dumps([check.__dict__ for check in checks], indent=2, sort_keys=True))
@@ -416,11 +552,13 @@ def main() -> int:
         check_quota(config),
         *check_instance_type(config),
         check_price(config),
+        check_host_ami(config),
+        *check_network(config),
         *check_ecr(config),
         *check_instance_role(config),
         check_artifacts(config),
         *check_artifact_role_access(config),
-        ok("launch mode", "read-only preflight only; run-instances is intentionally not implemented"),
+        *check_launch_safety(config),
     ]
     render(checks, args.json)
     has_failures = any(check.status == "fail" for check in checks)
