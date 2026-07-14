@@ -8,6 +8,7 @@ from infra.aws.exp01_launch import (
     build_run_instances_request,
     container_name,
     confirmation_phrase,
+    cache_volume_summary,
     image_reference,
     load_config,
     request_summary,
@@ -25,13 +26,17 @@ class Exp01LaunchConfigTest(unittest.TestCase):
             image_reference(self.config),
             "037678282394.dkr.ecr.us-west-2.amazonaws.com/"
             "multi-gpu-training-pytorch@"
-            "sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c",
+            "sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f",
         )
 
     def test_confirmation_phrase_names_profile_and_lifetime(self):
         self.assertEqual(
             confirmation_phrase(self.config),
             "launch EXP-01 AWS-G7E-2 terminate-after-90m",
+        )
+        self.assertEqual(
+            confirmation_phrase(self.config, hold_open_on_exit=True),
+            "launch EXP-01 AWS-G7E-2 stop-after-90m",
         )
 
     def test_run_instances_request_has_expected_safety_controls(self):
@@ -48,15 +53,20 @@ class Exp01LaunchConfigTest(unittest.TestCase):
             "FinetuningGpuInstanceRole",
         )
         self.assertEqual(
-            self.request["NetworkInterfaces"][0]["Groups"],
+            self.request["SecurityGroupIds"],
             ["sg-0797f3b8520d4efa9"],
         )
-        self.assertTrue(
-            self.request["NetworkInterfaces"][0]["AssociatePublicIpAddress"]
-        )
+        self.assertNotIn("NetworkInterfaces", self.request)
         self.assertTrue(
             self.request["BlockDeviceMappings"][0]["Ebs"]["DeleteOnTermination"]
         )
+
+    def test_cache_volume_is_declared_but_not_root_block_device(self):
+        self.assertIn("vol-0746f5d3a6d2cd859", cache_volume_summary(self.config))
+        self.assertEqual(self.config["cache_volume"]["size_gib"], 300)
+        self.assertEqual(self.config["cache_volume"]["availability_zone"], "us-west-2d")
+        self.assertEqual(self.config["cache_volume"]["docker_data_root"], "/mnt/aws-cache/docker")
+        self.assertEqual(len(self.request["BlockDeviceMappings"]), 1)
 
     def test_run_id_and_container_name_are_predictable(self):
         self.assertEqual(validate_run_id("20260714T041113Z"), "20260714T041113Z")
@@ -69,6 +79,9 @@ class Exp01LaunchConfigTest(unittest.TestCase):
         self.assertIn("aws s3 sync", user_data)
         self.assertIn("docker pull", user_data)
         self.assertIn("collect_exp01.sh", user_data)
+        self.assertIn("configure_cache_volume", user_data)
+        self.assertIn("CACHE_MOUNT_POINT=\"/mnt/aws-cache\"", user_data)
+        self.assertIn("data[\"data-root\"] = os.environ[\"CACHE_DOCKER_DATA_ROOT\"]", user_data)
         self.assertIn("--name \"${CONTAINER_NAME}\"", user_data)
         self.assertIn("shutdown -h now", user_data)
         self.assertIn("exp01-user-data.log", user_data)
@@ -81,17 +94,44 @@ class Exp01LaunchConfigTest(unittest.TestCase):
             hold_open_on_exit=True,
         )
         user_data = base64.b64decode(request["UserData"]).decode("utf-8")
+        self.assertEqual(request["InstanceInitiatedShutdownBehavior"], "stop")
         self.assertIn("HOLD_OPEN_ON_EXIT=\"1\"", user_data)
         self.assertIn("MAX_LIFETIME_SECONDS=\"5400\"", user_data)
+        self.assertIn("POST_RUN_INSPECTION_SECONDS=\"900\"", user_data)
+        self.assertIn("exp01-safety-shutdown.timer", user_data)
+        self.assertIn("OnBootSec=${MAX_LIFETIME_SECONDS}s", user_data)
+        self.assertIn("Holding host open for ${POST_RUN_INSPECTION_MINUTES} minutes", user_data)
+        self.assertIn("Post-run inspection window finished; stopping instance", user_data)
 
     def test_summary_exposes_confirmation_but_not_user_data_body(self):
         summary = request_summary(self.config, self.request, "test-run")
         self.assertEqual(summary["run_id"], "test-run")
         self.assertEqual(summary["shutdown_behavior"], "terminate")
+        self.assertEqual(summary["post_run_inspection_minutes"], 0)
         self.assertEqual(summary["container_name"], "exp01-test-run")
+        self.assertIn("/mnt/aws-cache/docker", summary["cache_volume"])
         self.assertFalse(summary["hold_open_on_exit"])
         self.assertIn("user_data_sha256", summary)
         self.assertNotIn("UserData", summary)
+
+    def test_hold_open_summary_exposes_stop_policy(self):
+        request = build_run_instances_request(
+            self.config,
+            "test-run",
+            hold_open_on_exit=True,
+        )
+        summary = request_summary(
+            self.config,
+            request,
+            "test-run",
+            hold_open_on_exit=True,
+        )
+        self.assertEqual(summary["shutdown_behavior"], "stop")
+        self.assertEqual(summary["post_run_inspection_minutes"], 15)
+        self.assertEqual(
+            summary["confirmation_phrase"],
+            "launch EXP-01 AWS-G7E-2 stop-after-90m",
+        )
 
 
 if __name__ == "__main__":

@@ -315,6 +315,13 @@ uptime || true
 free -h || true
 df -h || true
 echo
+echo "== block devices and filesystems =="
+lsblk -f || true
+echo
+echo "== docker root =="
+sudo docker info --format '{{.DockerRootDir}}' 2>/dev/null || true
+sudo docker system df 2>/dev/null || true
+echo
 echo "== nvidia-smi =="
 nvidia-smi || true
 echo
@@ -341,12 +348,15 @@ set -uo pipefail
 date -u
 uptime || true
 free -h || true
-df -h / /opt /tmp 2>/dev/null || df -h || true
-lsblk || true
+df -h / /opt /tmp /mnt/aws-cache 2>/dev/null || df -h || true
+lsblk -f || true
 echo
 nvidia-smi || true
 echo
 nvidia-smi topo -m || true
+echo
+sudo docker info --format '{{.DockerRootDir}}' 2>/dev/null || true
+sudo docker system df 2>/dev/null || true
 echo
 sudo docker ps --no-trunc || true
 echo

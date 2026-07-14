@@ -66,8 +66,11 @@ Official sources:
   required by the implemented lifecycle plus ECR pull-only access.
 - **Durable storage:** versioned S3 prefixes for pinned inputs and complete run
   artifacts.
+- **Persistent cache:** one manually retained EBS cache volume per Availability
+  Zone where we repeatedly launch AWS runs.
 - **Staging:** local instance-store NVMe for performance-sensitive temporary
-  data; EBS where persistence across stop/start is worth its cost.
+  data; retained EBS where persistence across terminated runs is worth its
+  cost.
 - **Access:** SSH or AWS Systems Manager will be chosen during qualification;
   experiment code must not depend on that choice.
 - **Visibility:** use the exact `AWS-G7E-1`, `AWS-G7E-2`, or `AWS-G7E-4`
@@ -108,21 +111,59 @@ Compute profile: AWS-G7E-2
 Security group: sg-0797f3b8520d4efa9
 Instance profile: FinetuningGpuInstanceRole
 Root EBS: 120 GiB gp3, encrypted, delete-on-termination
+Active subnet/AZ: AWS-selected default subnet/AZ
+Persistent cache EBS: selected by AZ from the retained cache-volume map
 Shutdown behavior: terminate
 IMDS: IMDSv2 required
 Image:
-037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c
+037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f
 ```
 
-It was published as tag `exp01-20260714-98ed22f`; ECR reported the image as
-`ACTIVE`. Scan-on-push completed with 60 critical, 178 high, 236 medium, 14
-low, and 4 undefined findings inherited from the current NVIDIA-derived stack;
-the finding disposition still needs recorded review.
+### Persistent AWS cache volume
 
-The first EC2 launch using this digest validated G7e host access, SSM, ECR
-pull, and S3 stage-out, but failed before measurement because the image omitted
-the accepted EXP-01 directory and could not find `collect_exp01.sh`. Rebuild and
-record a replacement image digest before retrying EXP-01 measurement.
+The AWS phase uses terminated EC2 instances for cost control, so root EBS and
+instance-store NVMe do not preserve Docker layers between runs. The reusable
+cache is a separate retained EBS volume:
+
+| Storage | Size | Lifetime | Use |
+| --- | ---: | --- | --- |
+| Root EBS | 120 GiB gp3 | delete on termination | OS, Docker config, bootstrap only |
+| Persistent cache EBS | 300 GiB gp3 | keep across AWS runs | Docker layer cache and later model/data cache for AWS PyTorch experiments |
+| Instance-store NVMe | 3.8 TiB on `g7e.12xlarge` | lost on terminate | Fast temporary run scratch and profiler data |
+| S3 | existing bucket | durable | Authoritative artifacts/results |
+
+Retained cache volumes currently exist in:
+
+| Availability Zone | Volume ID | Status |
+| --- | --- | --- |
+| `us-west-2a` | `vol-052b8f4246bd0d909` | Retained fallback cache volume |
+| `us-west-2b` | `vol-055b18a2e1e5fdf79` | Retained fallback cache volume |
+| `us-west-2c` | `vol-0189cec8b1c5bb224` | Retained fallback cache volume |
+| `us-west-2d` | `vol-0746f5d3a6d2cd859` | Retained fallback cache volume |
+
+EBS volumes are Availability-Zone scoped. EXP-01 now lets AWS select a default
+subnet/AZ and then attaches the retained cache volume that matches the
+instance's actual AZ. The duplicate volumes were created after transient
+`g7e.12xlarge` capacity blocked fixed-AZ attempts.
+
+After the volume exists, record its ID in `cache_volume.volume_id` in
+`exp01_qualification.yaml`. The launch wrapper checks that the volume is
+`available`, in the selected subnet's AZ, encrypted, `gp3`, and 300 GiB before
+creating an instance. During launch it attaches the volume as `/dev/sdf`; on
+Nitro hosts the guest sees it as an NVMe device, mounts it at `/mnt/aws-cache`,
+and configures Docker's `data-root` as `/mnt/aws-cache/docker`.
+
+The first EC2 launch used tag `exp01-20260714-98ed22f` at digest
+`sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c`.
+It validated G7e host access, SSM, ECR pull, and S3 stage-out, but failed
+before measurement because the image omitted the accepted EXP-01 directory and
+could not find `collect_exp01.sh`. Do not reuse that digest for measurement.
+
+The replacement image was published as tag `exp01-20260714-f08a362` at digest
+`sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`.
+Local smoke checks confirmed `collect_exp01.sh`, `p2pBandwidthLatencyTest`, and
+the required `nccl-tests` binaries are present. ECR reported the image as
+`ACTIVE`; scan-on-push was still `IN_PROGRESS` when recorded.
 
 The launch wrapper defaults to an AWS `RunInstances` dry run:
 
@@ -134,10 +175,18 @@ The dry run validates the EC2 request shape and permissions without creating an
 instance. A real launch is refused while `safety.launch_enabled` is `false`; if
 enabled in a later approved step, it also requires the exact confirmation
 phrase printed by the dry run. The generated user-data script includes the
-maximum lifetime watchdog, ECR pull, EXP-01 container execution, S3 artifact
-stage-out, and shutdown. Because the launch request sets
-`InstanceInitiatedShutdownBehavior=terminate`, successful or failed shutdown
+maximum lifetime guard, ECR pull, EXP-01 container execution, S3 artifact
+stage-out, and shutdown. The default launch request sets
+`InstanceInitiatedShutdownBehavior=terminate`, so successful or failed shutdown
 terminates the instance.
+
+Manual inspection runs use `HOLD_OPEN_ON_EXIT=1`. In that mode, the wrapper
+sets `InstanceInitiatedShutdownBehavior=stop`, keeps a hard 90-minute safety
+cap from each boot, stages artifacts to S3 after the container exits, keeps the
+host available for 15 minutes after success or failure, and then stops the
+instance. The stopped instance remains available for manual restart/debug, but
+the hard cap is installed as a systemd timer so it is rearmed on every later
+start.
 
 For manual inspection of an already-running EXP-01 host, use the SSM operator
 helpers:
@@ -164,8 +213,8 @@ make aws-exp01-container-shell
 
 For planned manual debugging, run the launch dry run with
 `HOLD_OPEN_ON_EXIT=1` first. If the later real launch is approved with the same
-option, the host stages artifacts to S3 and then stays available for manual
-inspection until the 90-minute watchdog or manual shutdown terminates it.
+option, the host stages artifacts to S3 and then stays available for the
+15-minute post-run inspection window before stopping.
 
 ## Admission checklist
 

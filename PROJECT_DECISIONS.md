@@ -1,7 +1,7 @@
 # Project decisions
 
 Status: Accepted
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 
 ## Document role and authority
 
@@ -200,6 +200,13 @@ in the decision log are historical identifiers and are not current catalog IDs.
 Each provider phase begins with its model-free topology/P2P/NCCL experiment:
 EXP-01 on AWS and EXP-10 on Runpod.
 
+AWS launch planning may use run-unit IDs `QUAL-A1`, `QUAL-A2`, `QUAL-A4`, and
+`EXP-NN-A1/A2/A4` to queue concrete compute-profile sub-runs. These are not
+canonical experiment IDs, do not create experiment directories, and do not carry
+separate lifecycle status from the parent catalog row. Sub-runs that are not
+required to answer the parent hypothesis are omitted from the current queue
+instead of being kept as standby experiment work.
+
 For experiments that train a model, the accepted training mode is
 full-parameter continued pretraining with autoregressive next-token
 cross-entropy. The runs exercise and validate the complete training path; they
@@ -249,8 +256,7 @@ Allowed topics include:
   as exposed by the allocated NVIDIA GPU host.
 - Data-loading and CPU bottlenecks when they affect GPU utilization.
 - Kernel, CUDA, NCCL, CPU, memory, and end-to-end timeline profiling.
-- Failure diagnosis, out-of-memory behavior, reproducibility, and distributed
-  checkpoint correctness.
+- Failure diagnosis, out-of-memory behavior, and reproducibility.
 
 ## Accepted exclusions
 
@@ -817,6 +823,33 @@ timestamps were not captured; no earlier chronology is implied by their IDs.
   hashes govern uploads to S3 and the Runpod network volume. Model-dependent
   experiment rows remain `proposed` until the remaining shared-workload choices
   and experiment-specific compatibility gates are accepted.
+
+### PD-022 — Remove standby experiment work and add AWS run-unit IDs
+
+- **Recorded:** 2026-07-14
+- **Status:** Accepted
+- **Supersedes:** The optional operational extension placement in PD-015 and
+  PD-016, and PD-020's exception for keeping resulting weights for an optional
+  restart extension. It preserves the 14 numbered core experiments, the
+  AWS-then-Runpod provider order, and the two admitted four-GPU cases.
+- **Decision:** Keep the active catalog limited to the 14 numbered experiments
+  plus the final synthesis deliverable. Remove the non-numbered distributed
+  checkpoint/restart extension from the current plan. Use AWS run-unit IDs
+  `QUAL-A1`, `QUAL-A2`, `QUAL-A4`, and `EXP-NN-A1/A2/A4` for concrete AWS
+  compute-profile queues and artifacts. Remove AWS sub-runs that are not needed
+  to answer their parent experiment's hypothesis; specifically, EXP-03 remains
+  a one-GPU AWS experiment and no longer has a two-GPU batch-geometry repeat.
+- **Rationale:** Standby experiment work made the AWS queue ambiguous at the
+  same time that `AWS-G7E-2` capacity is scarce. Concrete run units let one
+  acquired host execute the required two-GPU work in a known order without
+  changing canonical experiment IDs. Checkpoint/restart practice is useful
+  operationally but is less central to the GPU Acceleration and Optimization
+  curriculum than the existing 14 experiments.
+- **Consequences:** Resulting training weights are discarded after metrics are
+  collected. Future checkpoint/restart work or a removed AWS sub-run requires a
+  new explicit decision and catalog update before implementation. The A2 queue
+  begins with `QUAL-A2` and accepted `EXP-01-A2`; later A2 run units remain
+  blocked until their parent experiments are accepted and implemented.
 
 ## Primary references
 

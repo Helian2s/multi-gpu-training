@@ -44,7 +44,7 @@ containers with Buildx.
 | Native OCI image build | Docker Engine 29.1.3 daemon is running; Buildx 0.30.1 with BuildKit v0.26.2 is installed; Docker Hub manifest lookup succeeded; `docker run --rm --platform linux/amd64 alpine:3.20 uname -m` returned `x86_64`; local Docker images include pulled NGC bases and candidate project images `multi-gpu-training-pytorch:local` and `multi-gpu-training-nemo:local`, using about 64.8 GiB total | Ready for local native `linux/amd64` pulls and image builds; project GPU validation still requires a provider host |
 | NVIDIA GPU runtime | `lspci` shows Intel integrated graphics only; `nvidia-smi` is not installed; no `/dev/nvidia*` devices are visible; Docker runtimes are `io.containerd.runc.v2` and `runc` only | No local CUDA validation; cloud GPU validation remains mandatory |
 | NVIDIA NGC access | SSM SecureString `/finetuning/ngc/api-key` exists for NGC authentication; Docker login to `nvcr.io` using that value succeeded with a temporary Docker config; manifest access succeeded for candidate bases `nvcr.io/nvidia/pytorch:26.06-py3` (`sha256:43c018d6a12963f1a1bad85ef8574b5c2a978eec2be0ebcacfb87f69e0d210e1`) and `nvcr.io/nvidia/nemo:26.06` (`sha256:64fcec59b0eeee2853761d16767c603e03e0aa4ba03becc9a7793bb0c46545e7`); local CPU-only inspection is recorded in `containers/base-image-compatibility.md` | Ready for NGC-derived Dockerfile design; candidate digests are verified but not yet accepted project image pins |
-| AWS API and ECR | AWS CLI 2.33.27 is authenticated with profile `finetuning-local` as account `037678282394` in `us-west-2`; private ECR repositories `multi-gpu-training-pytorch` and `multi-gpu-training-nemo` exist at `037678282394.dkr.ecr.us-west-2.amazonaws.com` with immutable tags, AES256 encryption, scan-on-push, and untagged-image cleanup after 7 days; Docker ECR credential helper 0.6.4 is installed and `~/.docker/config.json` maps the project ECR registry to `ecr-login`; helper profile `finetuning-ecr-helper` uses `credential_process` to export short-lived credentials from `finetuning-local`; candidate images were pushed with immutable tag `publish-test-20260713-36621dd` and ECR digests recorded in `containers/base-image-compatibility.md`; PyTorch and NeMo ECR scans completed with findings pending review; EXP-01 PyTorch image `exp01-20260714-98ed22f` was pushed to ECR with digest `sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c`, status `ACTIVE`, and completed scan counts of 60 critical, 178 high, 236 medium, 14 low, and 4 undefined findings; existing EC2 instance role `FinetuningGpuInstanceRole` has inline policy `FinetuningGpuEcrPullOnly` allowing pull-only access to the two project repositories; IAM simulation allows ECR authorization-token and pull actions and denies `ecr:PutImage`; `FinetuningGpuS3Access` default version `v3` permits `FinetuningGpuInstanceRole` to list/read/write only the `artifacts/EXP-01/` project artifact prefix in the existing S3 bucket; EXP-01 preflight passes with pinned AMI `ami-04b4c34375925db5f`, default public subnets, no-ingress security group `sg-0797f3b8520d4efa9`, IMDSv2 required, shutdown behavior set to terminate, and the recorded image digest; the first EXP-01 EC2 launch used `g7e.12xlarge` in `us-west-2b`, validated SSM, two visible RTX PRO 6000 GPUs, ECR login/pull through the instance role, and S3 stage-out, then terminated itself; that run failed before measurement because the recorded image digest omitted the accepted EXP-01 directory and could not find `collect_exp01.sh`; EXP-01 SSM operator helpers are configured for status, one-off host/container commands, logs, monitoring, artifact listing, and interactive host/container shells; local `session-manager-plugin` 1.2.835.0 is installed; old `FT-EXP-00` `g6e.2xlarge` instance `i-0c769a18f50fd1fe6` was terminated and its 100 GiB and 250 GiB EBS volumes no longer exist | Host/IAM/ECR/S3 qualification partially validated; replacement EXP-01 image publication and a new explicitly approved launch are required before measurement |
+| AWS API and ECR | AWS CLI 2.33.27 is authenticated with profile `finetuning-local` as account `037678282394` in `us-west-2`; private ECR repositories `multi-gpu-training-pytorch` and `multi-gpu-training-nemo` exist at `037678282394.dkr.ecr.us-west-2.amazonaws.com` with immutable tags, AES256 encryption, scan-on-push, and untagged-image cleanup after 7 days; Docker ECR credential helper 0.6.4 is installed and `~/.docker/config.json` maps the project ECR registry to `ecr-login`, but this helper failed with the current AWS login credential source during manual push and a temporary Docker config was used instead; candidate images were pushed with immutable tag `publish-test-20260713-36621dd` and ECR digests recorded in `containers/base-image-compatibility.md`; PyTorch and NeMo ECR scans completed with findings pending review; failed EXP-01 image `exp01-20260714-98ed22f` remains in ECR at digest `sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c` and must not be reused for measurement; replacement EXP-01 image `exp01-20260714-f08a362` was pushed to ECR with digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`, status `ACTIVE`, and scan-on-push `IN_PROGRESS` when recorded; existing EC2 instance role `FinetuningGpuInstanceRole` has inline policy `FinetuningGpuEcrPullOnly` allowing pull-only access to the two project repositories; IAM simulation allows ECR authorization-token and pull actions and denies `ecr:PutImage`; `FinetuningGpuS3Access` default version `v3` permits `FinetuningGpuInstanceRole` to list/read/write only the `artifacts/EXP-01/` project artifact prefix in the existing S3 bucket; EXP-01 preflight passes with pinned AMI `ami-04b4c34375925db5f`, default public subnets, no-ingress security group `sg-0797f3b8520d4efa9`, IMDSv2 required, shutdown behavior set to terminate, and the replacement image digest; persistent AWS cache EBS volumes exist in all four `us-west-2` AZs as 300 GiB encrypted `gp3` with default 3000 IOPS and 125 MiB/s throughput, tagged `DeletePolicy=manual`: `us-west-2a` `vol-052b8f4246bd0d909`, `us-west-2b` `vol-055b18a2e1e5fdf79`, `us-west-2c` `vol-0189cec8b1c5bb224`, and `us-west-2d` `vol-0746f5d3a6d2cd859`; EXP-01 launch now lets AWS select the default subnet/AZ and attaches the cache volume matching the instance placement; the first EXP-01 EC2 launch used `g7e.12xlarge` in `us-west-2b`, validated SSM, two visible RTX PRO 6000 GPUs, ECR login/pull through the instance role, and S3 stage-out, then terminated itself; that run failed before measurement because the recorded image digest omitted the accepted EXP-01 directory and could not find `collect_exp01.sh`; EXP-01 SSM operator helpers are configured for status, one-off host/container commands, logs, monitoring, artifact listing, and interactive host/container shells; local `session-manager-plugin` 1.2.835.0 is installed; old `FT-EXP-00` `g6e.2xlarge` instance `i-0c769a18f50fd1fe6` was terminated and its 100 GiB and 250 GiB EBS volumes no longer exist | Host/IAM/ECR/S3/cache-volume qualification partially validated; an explicitly approved launch is required to verify replacement image execution and collect EXP-01 measurement |
 | GitHub and GHCR | GitHub CLI 2.45.0 is authenticated as `Helian2s` through the local keyring; `gh repo view` reports `ADMIN` permission on `Helian2s/multi-gpu-training`; Docker login to `ghcr.io` with the `gh` token succeeded and was then removed; `gh api /user/packages?package_type=container` failed because the token lacks `read:packages` | Ready for repository automation and basic GHCR connectivity; package read/write requires package scopes or GitHub Actions package permissions |
 | Runpod | `runpodctl` is not installed | Optional until a Runpod lifecycle task is assigned here; paid use remains blocked until the exposed key is rotated |
 | Local model and dataset inputs | `data/raw` is 3.6 GiB and `data/processed` is 550 MiB; `make verify-inputs` passed for 10 model files, 6 dataset files, and 9 processed files | Ready locally; durable S3 and Runpod copies are still pending |
@@ -60,16 +60,42 @@ containers with Buildx.
    pull-only credentials; AWS credentials are never stored in Runpod.
 4. Upload the pinned input snapshots and generated manifest to versioned S3 and
    Runpod network-volume paths, then verify their checksums.
-5. Rebuild and publish a replacement EXP-01 PyTorch image that contains
-   accepted experiment implementations, then record the new immutable digest.
-6. Verify the replacement image pull and container entry command during the
+5. Verify the replacement image pull and container entry command during the
    next AWS host qualification.
-7. Record the EXP-01 ECR scan finding review disposition before treating the
+6. Record the EXP-01 ECR scan finding review disposition before treating the
    image as accepted beyond qualification.
-8. On the first host from each compute profile, run qualification for the
+7. On the first host from each compute profile, run qualification for the
    NVIDIA driver, container runtime, CUDA, NCCL, DCGM, Nsight Systems, Nsight
    Compute, storage, image pull, topology, and termination guard. These tools
    cannot be validated on the non-NVIDIA local workstation.
+8. During the next explicitly approved EXP-01 launch, verify that the active
+   AZ-matched cache volume attaches to the host, mounts at `/mnt/aws-cache`,
+   and becomes Docker's data root at `/mnt/aws-cache/docker`.
+9. For manual EXP-01 launches, verify the new lifecycle policy: capacity
+   failures before instance creation leave no instance, launched instances use
+   `InstanceInitiatedShutdownBehavior=stop`, the hard 90-minute systemd safety
+   timer is active from each boot, and success or failure gets a 15-minute
+   post-run inspection window before the instance stops.
+
+## Current AWS capacity note
+
+On 2026-07-14, an EXP-01 retry using the fixed image and the `us-west-2b`
+cache-volume placement was blocked by transient EC2 capacity:
+`RunInstances` returned `InsufficientInstanceCapacity` for `g7e.12xlarge` in
+`us-west-2b` and did not create a second instance. After the manual-run policy
+was changed to stop rather than terminate, a second retry returned the same
+capacity error and also created no instance. A prior launch attempt in the same
+session created `i-08563b4ece80877cf` but failed before cache attach because
+the wrapper attached while the instance was still `pending`; the wrapper
+requested termination, and the instance is now `terminated`. The persistent
+cache volume `vol-055b18a2e1e5fdf79` remains `available`.
+
+The active EXP-01 placement now lets AWS select the default subnet/AZ and then
+attaches the matching retained cache volume. Fixed-AZ retries in `us-west-2a`,
+`us-west-2b`, `us-west-2c`, and `us-west-2d` returned
+`InsufficientInstanceCapacity`; the AWS-selected placement retry also returned
+`Insufficient capacity`. A later AWS-selected AWS-G7E-2 retry returned the same
+capacity error. None of those capacity failures created an instance.
 
 ## Security action
 

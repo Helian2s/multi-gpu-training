@@ -112,6 +112,7 @@ Git commit `98ed22f8e54a` and published to ECR for AWS-side qualification.
 | Image family | Local tag | ECR tag | ECR digest | Pushed | Scan state |
 | --- | --- | --- | --- | --- | --- |
 | PyTorch EXP-01 | `multi-gpu-training-pytorch:exp01-20260714-98ed22f` | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:exp01-20260714-98ed22f` | `sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c` | `2026-07-14T01:14:55Z` | `COMPLETE`: 60 critical, 178 high, 236 medium, 14 low, 4 undefined |
+| PyTorch EXP-01 replacement | `multi-gpu-training-pytorch:exp01-scriptfix-f08a362` | `037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:exp01-20260714-f08a362` | `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f` | `2026-07-14T16:20:36Z` | `IN_PROGRESS` when recorded |
 
 The image status was `ACTIVE` after push. ECR scan-on-push reported the same
 severity counts as the earlier PyTorch publication smoke test, indicating the
@@ -120,13 +121,18 @@ need recorded review. A local smoke check confirmed `p2pBandwidthLatencyTest`
 and `all_reduce_perf` are on `PATH`; executing the CUDA sample still fails
 locally with the expected missing/insufficient CUDA driver error.
 
-The first EC2 launch using this digest pulled successfully through
+The first EC2 launch using the `98ed22f` digest pulled successfully through
 `FinetuningGpuInstanceRole` and validated the G7e host driver/GPU visibility,
 but the container exited before running EXP-01 because this image omitted the
 accepted experiment directory and therefore did not contain
 `experiments/exp_01_aws_pcie_p2p_nccl_communication/collect_exp01.sh`. Do not
-reuse this digest for EXP-01 measurement; rebuild and publish a replacement
-PyTorch digest that copies accepted experiment implementations into the image.
+reuse that digest for EXP-01 measurement.
+
+The replacement `f08a362` image copies accepted experiment implementations into
+the image. A local container smoke check confirmed `collect_exp01.sh`,
+`p2pBandwidthLatencyTest`, `all_reduce_perf`, `reduce_scatter_perf`,
+`all_gather_perf`, `broadcast_perf`, and `alltoall_perf` are present on the
+expected paths or `PATH`.
 
 ## ECR Publication Smoke Test
 

@@ -329,6 +329,103 @@ def check_network(config: dict[str, Any]) -> list[Check]:
     return checks
 
 
+def selected_subnet_az(config: dict[str, Any]) -> str | None:
+    subnet_ids = config["network"].get("subnet_ids") or []
+    if not subnet_ids:
+        return None
+    aws_cfg = config["aws"]
+    data = json_aws(
+        aws_cfg["profile"],
+        aws_cfg["region"],
+        "ec2",
+        "describe-subnets",
+        "--subnet-ids",
+        subnet_ids[0],
+        allow_failure=True,
+    )
+    subnets = data.get("Subnets", []) if data else []
+    if len(subnets) != 1:
+        return None
+    return subnets[0]["AvailabilityZone"]
+
+
+def check_cache_volume(config: dict[str, Any]) -> list[Check]:
+    cache = config.get("cache_volume") or {}
+    if not cache.get("enabled"):
+        return [ok("cache volume", "disabled")]
+
+    checks: list[Check] = []
+    volume_id = cache.get("volume_id")
+    subnet_az = selected_subnet_az(config)
+    if subnet_az and subnet_az == cache["availability_zone"]:
+        checks.append(ok("cache volume az", f"selected subnet and cache are in {subnet_az}"))
+    elif subnet_az:
+        checks.append(
+            fail(
+                "cache volume az",
+                f"selected subnet is {subnet_az}, cache config is {cache['availability_zone']}",
+            )
+        )
+    else:
+        checks.append(fail("cache volume az", "could not resolve selected subnet Availability Zone"))
+
+    if not volume_id:
+        checks.append(
+            warn(
+                "cache volume",
+                (
+                    f"planned {cache['size_gib']} GiB {cache['volume_type']} volume in "
+                    f"{cache['availability_zone']}; create it and record volume_id before launch"
+                ),
+            )
+        )
+        return checks
+
+    aws_cfg = config["aws"]
+    data = json_aws(
+        aws_cfg["profile"],
+        aws_cfg["region"],
+        "ec2",
+        "describe-volumes",
+        "--volume-ids",
+        volume_id,
+        allow_failure=True,
+    )
+    volumes = data.get("Volumes", []) if data else []
+    if len(volumes) != 1:
+        checks.append(fail("cache volume", f"{volume_id} was not found"))
+        return checks
+
+    volume = volumes[0]
+    if volume.get("State") == "available":
+        checks.append(ok("cache volume state", f"{volume_id} is available for the next launch"))
+    else:
+        checks.append(fail("cache volume state", f"{volume_id} state={volume.get('State')}; expected available"))
+    if volume.get("AvailabilityZone") == cache["availability_zone"]:
+        checks.append(ok("cache volume placement", volume["AvailabilityZone"]))
+    else:
+        checks.append(
+            fail(
+                "cache volume placement",
+                f"{volume.get('AvailabilityZone')} does not match {cache['availability_zone']}",
+            )
+        )
+    if int(volume.get("Size", 0)) == int(cache["size_gib"]):
+        checks.append(ok("cache volume size", f"{volume['Size']} GiB"))
+    else:
+        checks.append(fail("cache volume size", f"{volume.get('Size')} GiB, expected {cache['size_gib']} GiB"))
+    if volume.get("VolumeType") == cache["volume_type"]:
+        checks.append(ok("cache volume type", volume["VolumeType"]))
+    else:
+        checks.append(fail("cache volume type", f"{volume.get('VolumeType')}, expected {cache['volume_type']}"))
+    if bool(volume.get("Encrypted")) == bool(cache["encrypted"]):
+        checks.append(ok("cache volume encryption", f"encrypted={volume.get('Encrypted')}"))
+    else:
+        checks.append(fail("cache volume encryption", f"encrypted={volume.get('Encrypted')}"))
+    checks.append(ok("cache mount plan", f"{cache['mount_point']} with Docker data root {cache['docker_data_root']}"))
+    return checks
+
+
 def check_ecr(config: dict[str, Any]) -> list[Check]:
     aws_cfg = config["aws"]
     image = config["image"]
@@ -554,6 +651,7 @@ def main() -> int:
         check_price(config),
         check_host_ami(config),
         *check_network(config),
+        *check_cache_volume(config),
         *check_ecr(config),
         *check_instance_role(config),
         check_artifacts(config),

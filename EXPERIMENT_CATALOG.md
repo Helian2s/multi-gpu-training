@@ -1,6 +1,6 @@
 # Proposed experiment catalog
 
-Document status: Planning worksheet; all numbered experiments are proposed
+Document status: Planning worksheet; numbered experiments use per-row lifecycle status
 Last updated: 2026-07-14
 Governing decisions: [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md)
 
@@ -43,7 +43,7 @@ allowed only when the experiment's hypothesis makes it unavoidable.
 | Dense workload model | Use `Qwen/Qwen3-1.7B-Base` at the revision pinned in `configs/inputs.lock.yaml` for every model-dependent experiment | accepted |
 | Comparable initialization | Restore every comparable variant from the same pinned pretrained checkpoint, batches, and seeds | accepted |
 | Training task and objective | Full-parameter continued pretraining with autoregressive next-token cross-entropy; exclude SFT, LoRA, and training from scratch | accepted |
-| Benchmark purpose and output | Exercise the complete training path for short infrastructure measurements, not convergence; discard resulting weights except for the optional restart extension | accepted |
+| Benchmark purpose and output | Exercise the complete training path for short infrastructure measurements, not convergence; discard resulting weights after metrics are collected | accepted |
 | Dataset, tokenizer, and preparation | Use pinned `Salesforce/wikitext` `wikitext-103-raw-v1`, the pinned model tokenizer, and deterministic canonical token streams without custom cleaning or curation | accepted |
 | Revision and sample identity | Pin model, tokenizer, dataset, and preprocessing revisions and preserve sample hashes before comparable runs | accepted |
 | Default benchmark precision | Use BF16 except when precision is the independent variable in EXP-02 or a compatibility requirement dictates otherwise | proposed |
@@ -200,8 +200,7 @@ benchmark windows are intentionally short.
 
 For this project, the updated model is not the product. Each comparison starts
 again from the identical base checkpoint, and resulting weights are discarded
-after metrics are collected except when the optional checkpoint/restart
-extension needs them. We care that the loss and updates are valid and
+after metrics are collected. We care that the loss and updates are valid and
 equivalent across configurations—not that the short run improves general
 knowledge or downstream answers.
 
@@ -220,7 +219,6 @@ duration each time:
 | Smoke | Detect configuration, launch, and immediate OOM failures | 3 complete optimizer steps |
 | Correctness | Compare loss/gradients/updates from a fixed checkpoint and fixed batches | 5 deterministic optimizer steps |
 | Benchmark | Measure steady-state performance | 20 warm-up + 100 measured steps, repeated when variance requires |
-| Resume, if the optional extension is selected | Validate checkpoint continuation | Save, reload, and compare at least the next 3 steps |
 
 These are measurement windows, not attempts to train the model to convergence.
 An experiment may shorten a profile when profiler overhead is extreme, but must
@@ -241,8 +239,6 @@ If accepted, required evaluation is limited to:
 - Training loss during the measured run.
 - Validation cross-entropy and perplexity on a small fixed WikiText validation
   slice before and after experiments that perform optimizer updates.
-- Exact or tolerance-based post-resume agreement when the checkpoint extension
-  is implemented.
 
 Not required:
 
@@ -294,8 +290,8 @@ pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 | ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
 | --- | --- | --- | ---: | --- | ---: | --- |
 | EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-G7E-2` | 1.5-3.0 | accepted |
-| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-G7E-1`; representative AWS `AWS-G7E-2` checks | 1.0-2.0 | proposed |
-| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1, optional 2 | AWS `AWS-G7E-1`; optional AWS `AWS-G7E-2` DP sanity check | 1.0-2.0 | proposed |
+| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-G7E-1`; bounded AWS `AWS-G7E-2` DDP check | 1.0-2.0 | proposed |
+| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
 | EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-G7E-1` | 0.5-1.0 | proposed |
 | EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
 | EXP-06 | Profiler triangulation | PyTorch/NVIDIA tools | 1 | AWS `AWS-G7E-1` | 0.75-1.5 | proposed |
@@ -308,10 +304,8 @@ pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 | EXP-13 | Context parallelism for long sequences | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
 | EXP-14 | TP=2 x DP=2 for model width and throughput | NeMo/Megatron | 4 | Runpod `RUNPOD-A100-SXM4` | 2.0-3.0 | proposed |
 
-The 14 core row estimates sum to 19.5-38 measured GPU-hours. The optional
-distributed-checkpoint extension described later is outside this total.
-First-time debugging and profiler setup can make the billable total materially
-higher.
+The 14 core row estimates sum to 19.25-37.5 measured GPU-hours. First-time
+debugging and profiler setup can make the billable total materially higher.
 
 These are **active experiment GPU-hours**, not necessarily provider-billed
 accelerator hours. Cost uses the complete EC2 instance or Runpod Pod. G7e offers
@@ -320,12 +314,12 @@ masked GPUs.
 
 The AWS phase intentionally keeps G7e as the normal family so precision,
 topology, memory, profiler, and communication observations stay within one GPU
-generation. Cost control should come first from reducing optional two-GPU
-sub-runs and tightly gating the single four-GPU run, not from silently switching
-to G6e, G6, G5, or another family. A cheaper family may be proposed only as an
-explicit contingency because it changes GPU architecture, memory size,
-interconnect behavior, supported precision paths, and often the exact GPU-count
-shape.
+generation. Cost control should come from bounded run units, tightly gating the
+single four-GPU run, and deferring any non-required follow-up to a separate
+decision, not from silently switching to G6e, G6, G5, or another family. A
+cheaper family may be proposed only as an explicit contingency because it
+changes GPU architecture, memory size, interconnect behavior, supported
+precision paths, and often the exact GPU-count shape.
 
 Each numbered experiment has exactly one provider. A scale experiment may use
 sequential instance sizes from that provider, but every sub-run still uses one
@@ -346,6 +340,46 @@ Four GPUs are admitted only where two GPUs cannot test the hypothesis:
 No other catalog experiment has a four-GPU run. Adding one requires an explicit
 hypothesis that cannot be answered with one or two GPUs and a project-decision
 update.
+
+### AWS run-unit ID system
+
+Canonical experiment IDs remain `EXP-NN` and are the only IDs used for
+experiment directories, reports, and lifecycle status. AWS execution planning
+uses run-unit IDs to name concrete compute-profile sub-runs without renumbering
+the catalog:
+
+- `QUAL-A1`, `QUAL-A2`, and `QUAL-A4` are shared qualification run units for
+  one-, two-, and four-GPU AWS sessions. They are prerequisites, not
+  experiments.
+- `EXP-NN-A1`, `EXP-NN-A2`, and `EXP-NN-A4` are AWS run units for the same
+  canonical experiment on `AWS-G7E-1`, `AWS-G7E-2`, and `AWS-G7E-4`.
+- A run unit appears in launch queues, artifact manifests, and report
+  subsections. It does not create a separate experiment directory or change the
+  parent experiment's `Status`.
+- If a proposed sub-run is not needed to answer the parent experiment's
+  hypothesis, it is removed from the current queue instead of being kept as
+  standby work.
+
+Current AWS run units:
+
+| Run unit | Parent | Profile | Status | Purpose |
+| --- | --- | --- | --- | --- |
+| `QUAL-A1` | Shared AWS qualification | `AWS-G7E-1` | planned | One-GPU host, image, storage, SSM, and smoke-test qualification |
+| `QUAL-A2` | Shared AWS qualification | `AWS-G7E-2` | in preparation | Two-GPU host, image, storage, SSM, topology, P2P, and NCCL smoke qualification |
+| `QUAL-A4` | Shared AWS qualification | `AWS-G7E-4` | planned | Four-GPU host and runtime qualification before the gated DDP scaling run |
+| `EXP-01-A2` | EXP-01 | `AWS-G7E-2` | accepted, in preparation | AWS PCIe P2P and NCCL baseline |
+| `EXP-02-A1` | EXP-02 | `AWS-G7E-1` | proposed | Full precision and Tensor Core sweep |
+| `EXP-02-A2` | EXP-02 | `AWS-G7E-2` | proposed | Bounded two-rank DDP precision check after EXP-01-A2 |
+| `EXP-03-A1` | EXP-03 | `AWS-G7E-1` | proposed | Microbatch and accumulation sweep |
+| `EXP-04-A1` | EXP-04 | `AWS-G7E-1` | proposed | Activation checkpointing/recomputation sweep |
+| `EXP-05-A1` | EXP-05 | `AWS-G7E-1` | proposed | SDPA, FlashAttention, and fusion sweep |
+| `EXP-06-A1` | EXP-06 | `AWS-G7E-1` | proposed | Profiler triangulation |
+| `EXP-07-A1` | EXP-07 | `AWS-G7E-1` | proposed | DDP one-rank baseline |
+| `EXP-07-A2` | EXP-07 | `AWS-G7E-2` | proposed | DDP two-rank scaling point |
+| `EXP-07-A4` | EXP-07 | `AWS-G7E-4` | proposed | DDP four-rank scaling point |
+| `EXP-08-A2` | EXP-08 | `AWS-G7E-2` | proposed | FSDP/DDP memory and communication comparison |
+| `EXP-09-A1` | EXP-09 | `AWS-G7E-1` | proposed | One-rank failure and input-pipeline cases |
+| `EXP-09-A2` | EXP-09 | `AWS-G7E-2` | proposed | Distributed fault cases that require two ranks |
 
 ## Mandatory pre-run qualification
 
@@ -484,10 +518,10 @@ EXP-07 and EXP-08.
 ### EXP-02: Mixed precision and Tensor Cores in distributed training
 
 **Planned compute:** `AWS-G7E-1` for the full precision and Tensor Core sweep.
-Use `AWS-G7E-2` for representative two-rank DDP checks after the AWS
-communication baseline is qualified; do not repeat every precision and shape
-combination on two GPUs unless the one-GPU result makes the DDP interaction
-material.
+Use `AWS-G7E-2` for the bounded `EXP-02-A2` two-rank DDP check after the AWS
+communication baseline is qualified. `EXP-02-A2` tests the selected supported
+precision paths under DDP with constant effective global batch; it does not
+repeat every one-GPU precision and shape combination.
 
 **Scenario (exam style):** A financial-services company moves LLM training to a
 new NVIDIA GPU generation. FP32 training is stable but expensive, while an FP16
@@ -534,9 +568,7 @@ changes the compute-to-communication balance in DDP.
 
 ### EXP-03: Microbatch, global batch, and gradient accumulation
 
-**Planned compute:** `AWS-G7E-1` primary. Use `AWS-G7E-2` only for a bounded
-optional repeat that demonstrates the data-parallel term in the global-batch
-formula after the two-GPU AWS baseline is already qualified.
+**Planned compute:** `AWS-G7E-1` only.
 
 **Scenario (exam style):** A retailer doubles its training GPU count but keeps
 the old microbatch and accumulation settings. Throughput improves, yet the
@@ -549,10 +581,11 @@ utilization, optimizer frequency, and throughput while preserving effective
 global batch size?
 
 **Sweep:** Several `(microbatch, accumulation_steps)` pairs with constant global
-batch on one GPU. Optionally repeat a small representative subset on two GPUs
-to demonstrate the DP term in
-`global_batch = microbatch x accumulation_steps x data_parallel_size`; do not
-repeat the full one-GPU sweep merely to fill two-GPU time.
+batch on one GPU. Record the formula
+`global_batch = microbatch x accumulation_steps x data_parallel_size` and the
+settings needed to keep global batch fixed when data-parallel size changes.
+The measured data-parallel scaling evidence comes from EXP-07 instead of a
+separate EXP-03 two-GPU sub-run.
 
 **Measurements:** Peak memory, tokens/second, step time per optimizer update,
 GPU utilization, number of synchronization operations, loss, and gradient
@@ -888,38 +921,6 @@ shards. The two replicas consume different samples. TP reduces per-GPU layer
 state; DP increases aggregate batch throughput but does not partition a sample's
 context.
 
-## Optional operational extension
-
-### Distributed checkpoint and restart
-
-**Planned compute:** Runpod `RUNPOD-A100-SXM2` only. PyTorch and NeMo/Megatron
-cases run sequentially in their respective containers on the same billed Pod.
-
-This is not a numbered core experiment and is not included in the catalog
-GPU-hour total. It may be implemented after the exam-focused curriculum when
-operational recovery practice is worth the additional time and cost.
-
-**Scenario (exam style):** A team uses interruptible cloud capacity and loses a
-two-GPU training job after several hours. The model reloads, but its next loss
-differs because optimizer state, RNG state, or data position was not restored.
-What must a distributed checkpoint preserve, and which world-size changes are
-actually supported?
-
-**Question:** Can replicated and sharded jobs resume without changing the next
-loss/update, and which checkpoint forms depend on world size or layout?
-
-**Sweep:** Save and resume DDP, FSDP, and one NeMo/Megatron model-parallel job.
-If supported, test loading with one compatible changed data-parallel degree;
-do not promise arbitrary TP/PP reshaping.
-
-**Measurements:** Save/load time, checkpoint size and file count, CPU/GPU memory
-during save, restored optimizer/RNG/data position, and post-resume loss/update
-agreement.
-
-**Why optional:** Sharded-state correctness is useful operational experience,
-but it maps more directly to reliability and lifecycle management than to the
-GPU Acceleration and Optimization domain.
-
 ## Final curriculum deliverable
 
 The project ends with a configuration-selection report and exam decision
@@ -980,8 +981,7 @@ experiment still starts only after its explicit prerequisites pass:
 6. **Runpod communication baseline:** EXP-10.
 7. **Runpod model-parallel dimensions:** EXP-11 through EXP-13.
 8. **Runpod hybrid layout:** EXP-14.
-9. **Optional extension:** distributed checkpoint and restart, after the core.
-10. **Synthesis:** write the final curriculum report and exam decision worksheet.
+9. **Synthesis:** write the final curriculum report and exam decision worksheet.
 
 Compute-profile sub-runs may be batched for cost efficiency, but their reports
 retain this logical order. An experiment should not start merely because it is
@@ -998,9 +998,9 @@ The normal AWS sessions rent the exact active GPU count:
 
 | Session | Compute profile | Candidate work |
 | --- | --- | --- |
-| A1 | `AWS-G7E-1` | EXP-02 through EXP-06 baselines, EXP-07 `A1`, and EXP-09 one-rank OOM, numerical, and input-pipeline cases |
-| A2 | `AWS-G7E-2` | EXP-01, representative EXP-02 two-rank checks, optional EXP-03 DP sanity check, EXP-07 `A2`, EXP-08, and EXP-09 distributed faults |
-| A4 | `AWS-G7E-4` | EXP-07 `A4` only |
+| A1 | `AWS-G7E-1` | `QUAL-A1`, `EXP-02-A1`, `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, `EXP-06-A1`, `EXP-07-A1`, `EXP-09-A1` |
+| A2 | `AWS-G7E-2` | `QUAL-A2`, `EXP-01-A2`, `EXP-02-A2`, `EXP-07-A2`, `EXP-08-A2`, `EXP-09-A2` |
+| A4 | `AWS-G7E-4` | `QUAL-A4`, `EXP-07-A4` |
 
 `AWS-G7E-4` consumes the complete 96-vCPU G/VT quota. Before launching it, the
 lifecycle adapter must verify that no other G or VT instance is running in the
@@ -1008,11 +1008,26 @@ Region. G6e, G5, G6, or another AWS family is not a silent fallback: changing
 the GPU or instance type changes the environment and requires updating the
 planned compute profile and expected results.
 
+### A2 queue preparation
+
+When `AWS-G7E-2` capacity becomes available, the A2 session should run the
+ready qualification and accepted work first, then stop unless later proposed
+experiments have already been accepted and implemented.
+
+| Queue order | Run unit | Current state | Required before launch |
+| ---: | --- | --- | --- |
+| 1 | `QUAL-A2` | in preparation | Fixed-image pull, cache-volume mount, SSM access, Docker root validation, two visible GPUs, topology capture, P2P smoke, and NCCL smoke |
+| 2 | `EXP-01-A2` | accepted, in preparation | Use ECR image digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`; stage out `artifacts/EXP-01/`; keep the instance available for the agreed manual inspection window |
+| 3 | `EXP-02-A2` | proposed, not ready | Accept EXP-02, implement the bounded DDP precision check, and validate non-GPU tests |
+| 4 | `EXP-07-A2` | proposed, not ready | Accept EXP-07, implement the two-rank DDP scaling profile, and validate the one-rank baseline path |
+| 5 | `EXP-08-A2` | proposed, not ready | Accept EXP-08, implement DDP/FSDP correctness and memory checks, and validate state-dict handling |
+| 6 | `EXP-09-A2` | proposed, not ready | Accept EXP-09 and implement distributed fault cases with bounded timeouts and cleanup |
+
 Use separate exact-size Runpod sessions after local preparation is complete:
 
 | Session | Compute profile | Visible-GPU phases | Candidate work |
 | --- | --- | ---: | --- |
-| R2 | `RUNPOD-A100-SXM2` | 1, 2 | EXP-10 followed by all two-GPU NeMo/Megatron work, EXP-11 through EXP-13; add the optional checkpoint extension only if selected |
+| R2 | `RUNPOD-A100-SXM2` | 1, 2 | EXP-10 followed by all two-GPU NeMo/Megatron work, EXP-11 through EXP-13 |
 | R4 | `RUNPOD-A100-SXM4` | 4 | EXP-14 only |
 
 The R2 session pays for two GPUs even during a one-visible-GPU baseline. The R4
@@ -1027,8 +1042,6 @@ The following decisions should be made before implementation begins:
 1. Accept the remaining proposed workload choices: BF16 as the default
    benchmark precision and the correctness-only evaluation boundary?
 2. Accept the proposed core set as-is, or set an overall GPU-hour/budget cap?
-3. After the 14 core experiments, is the optional distributed-checkpoint
-   extension worth its additional implementation time and GPU cost?
 
 ## Primary sources
 
