@@ -39,8 +39,8 @@ artifacts:
 network:
   vpc_id: vpc-0480da876d161ad22
   subnet_ids:
-    - subnet-0c7c33d276fe5f654 # us-west-2a, default public subnet
     - subnet-0d50d4374d2149a57 # us-west-2b, default public subnet
+    - subnet-0c7c33d276fe5f654 # us-west-2a, default public subnet
     - subnet-0e52a0c3ae6a086e8 # us-west-2c, default public subnet
     - subnet-0e99f5711b201d98e # us-west-2d, default public subnet
   security_group_ids:
