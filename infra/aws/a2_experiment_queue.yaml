@@ -1,0 +1,103 @@
+schema_version: 1
+queue:
+  id: AWS-A2-PyTorch
+  description: Sequential two-GPU AWS-A2 queue for EXP-01, EXP-02, EXP-07, EXP-08, and EXP-09.
+  compute_profile: AWS-A2
+  qualification_config: infra/aws/exp01_qualification.yaml
+  maximum_lifetime_minutes: 300
+  post_queue_inspection_minutes: 15
+  stop_on_success: true
+  stop_on_failure: false
+
+aws:
+  profile: finetuning-local
+  account_id: "037678282394"
+  region: us-west-2
+
+image:
+  registry: 037678282394.dkr.ecr.us-west-2.amazonaws.com
+  repository: multi-gpu-training-pytorch
+  tag: aws-a2-fp16fix-20260715-0230-4aa4672-dirty
+  digest: sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486
+
+inputs:
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/inputs/qwen3-wikitext-v1/
+  host_data_dir: /mnt/aws-cache/inputs/qwen3-wikitext-v1/data
+  container_data_dir: /workspace/multi-gpu-training/data
+  required_manifest: processed/Qwen--Qwen3-1.7B-Base--ea980cb0a6c2__Salesforce--wikitext--b08601e04326__wikitext-103-raw-v1__qwen3-wikitext-v1/manifest.json
+
+artifacts:
+  host_root: /opt/multi-gpu-training/artifacts/runs
+  container_root: /workspace/multi-gpu-training/artifacts/runs
+  queue_log_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/AWS-A2-PyTorch/
+
+container:
+  name_prefix: aws-a2
+  shm_size: 32g
+  environment:
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+    NCCL_DEBUG: INFO
+    NCCL_DEBUG_SUBSYS: INIT,COLL,GRAPH
+    TOKENIZERS_PARALLELISM: "false"
+    TORCH_DISTRIBUTED_DEBUG: DETAIL
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+
+run_units:
+  - run_unit: EXP-01-A2
+    experiment_id: EXP-01
+    kind: shell
+    visible_devices: "0,1"
+    command:
+      - bash
+      - experiments/exp_01_aws_pcie_p2p_nccl_communication/collect_exp01.sh
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-01/
+    timeout_seconds: 5400
+  - run_unit: EXP-02-A2V1
+    experiment_id: EXP-02
+    kind: runner
+    visible_devices: "0"
+    runner: experiments/exp_02_mixed_precision_tensor_cores/run_exp02.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-02/
+    timeout_seconds: 5400
+  - run_unit: EXP-02-A2V2
+    experiment_id: EXP-02
+    kind: runner
+    visible_devices: "0,1"
+    runner: experiments/exp_02_mixed_precision_tensor_cores/run_exp02.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-02/
+    timeout_seconds: 5400
+  - run_unit: EXP-07-A2V1
+    experiment_id: EXP-07
+    kind: runner
+    visible_devices: "0"
+    runner: experiments/exp_07_ddp_scaling_communication_overlap/run_exp07.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-07/
+    timeout_seconds: 7200
+  - run_unit: EXP-07-A2V2
+    experiment_id: EXP-07
+    kind: runner
+    visible_devices: "0,1"
+    runner: experiments/exp_07_ddp_scaling_communication_overlap/run_exp07.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-07/
+    timeout_seconds: 7200
+  - run_unit: EXP-08-A2V2
+    experiment_id: EXP-08
+    kind: runner
+    visible_devices: "0,1"
+    runner: experiments/exp_08_fsdp_sharding_zero_memory_tradeoffs/run_exp08.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-08/
+    timeout_seconds: 5400
+  - run_unit: EXP-09-A2V1
+    experiment_id: EXP-09
+    kind: runner
+    visible_devices: "0"
+    runner: experiments/exp_09_controlled_troubleshooting_failure_diagnosis/run_exp09.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-09/
+    timeout_seconds: 5400
+  - run_unit: EXP-09-A2V2
+    experiment_id: EXP-09
+    kind: runner
+    visible_devices: "0,1"
+    runner: experiments/exp_09_controlled_troubleshooting_failure_diagnosis/run_exp09.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-09/
+    timeout_seconds: 5400

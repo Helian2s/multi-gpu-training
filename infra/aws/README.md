@@ -122,17 +122,74 @@ make aws-a1-launch-dry-run HOLD_OPEN_ON_EXIT=1
 make aws-a1-status
 make aws-a1-monitor
 make aws-a1-logs
+make aws-a1-queue-plan
 ```
 
 The A1 dry run validates the `g7e.2xlarge` request without creating an
 instance. S3 stage-out is approved for `artifacts/QUAL-A1/` through
-`FinetuningGpuS3Access` default version `v5`; EXP-03/04/05/06 prefixes are not
-granted while those experiments remain proposed. The shared PyTorch image ECR
-scan disposition is recorded for short-lived qualification smoke runs only. A
-real A1 smoke launch remains blocked until the launch is explicitly confirmed.
+`FinetuningGpuS3Access`; after EXP-03 through EXP-06 were accepted, default
+version `v6` also permits the instance role to read
+`inputs/qwen3-wikitext-v1/` and write `artifacts/EXP-03/` through
+`artifacts/EXP-06/`. The shared PyTorch image ECR scan disposition is recorded
+for short-lived qualification smoke runs only. A real A1 smoke launch remains
+blocked until the launch is explicitly confirmed.
 If an A1 host is running in hold-open mode, the A1 host/container command and
 shell targets mirror the EXP-01 helpers but use the
 `qual-a1-${RUN_ID}` container name.
+
+The accepted AWS-A1 experiment queue is defined in
+`a1_experiment_queue.yaml`. It runs `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, and
+`EXP-06-A1` sequentially on an already-running AWS-A1 host through SSM; it does
+not start EC2. The queue stages pinned inputs from:
+
+```text
+s3://finetuning-lab-1-037678282394-us-west-2-an/inputs/qwen3-wikitext-v1/
+```
+
+onto the retained EBS cache volume and uses this ECR image:
+
+```text
+037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225
+```
+
+Print the exact guarded host script before running it:
+
+```bash
+make aws-a1-queue-script RUN_ID=manual-a1-YYYYMMDD
+```
+
+Run it only after an AWS-A1 instance is already running and selected:
+
+```bash
+make aws-a1-queue-run INSTANCE_ID=i-... RUN_ID=manual-a1-YYYYMMDD
+```
+
+The immediate AWS-A2 experiment queue is defined in
+`a2_experiment_queue.yaml`. It runs `EXP-01-A2`, `EXP-02-A2V1`,
+`EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`,
+`EXP-09-A2V1`, and `EXP-09-A2V2` sequentially on one `g7e.12xlarge` host.
+The queue launch pins `us-west-2b`, attaches the retained cache volume
+`vol-055b18a2e1e5fdf79`, sets `InstanceInitiatedShutdownBehavior=stop`, stages
+pinned inputs from S3, and syncs artifacts after each run unit. A successful
+queue keeps a 15-minute post-queue inspection window before shutdown. A failed
+queue uploads its log and leaves the EC2 instance running for manual inspection;
+the hard 300-minute safety shutdown remains scheduled.
+
+Print or launch the guarded A2 queue with:
+
+```bash
+make aws-a2-queue-plan
+make aws-a2-queue-script RUN_ID=manual-a2-YYYYMMDD
+make aws-a2-queue-launch-dry-run RUN_ID=manual-a2-YYYYMMDD
+make aws-a2-queue-launch RUN_ID=manual-a2-YYYYMMDD CONFIRM='launch AWS-A2-PyTorch AWS-A2 stop-after-300m'
+```
+
+On 2026-07-15, an approved fixed-`us-west-2b` A2 launch reached a
+`g7e.12xlarge` host and pulled the queue image, but the first queue attempt
+failed before measurement because generated user-data parsed the run-unit table
+incorrectly. `a2_queue.py` now emits shell-quoted `run_queue_unit` calls
+directly, and `make check` covers that regression. Retrying the queue starts a
+billable host and needs explicit approval.
 
 The current recorded EXP-01 host and image are:
 
@@ -144,12 +201,12 @@ Compute profile: AWS-A2
 Security group: sg-0797f3b8520d4efa9
 Instance profile: FinetuningGpuInstanceRole
 Root EBS: 120 GiB gp3, encrypted, delete-on-termination
-Active subnet/AZ: AWS-selected default subnet/AZ
-Persistent cache EBS: selected by AZ from the retained cache-volume map
-Shutdown behavior: terminate
+Active subnet/AZ: subnet-0d50d4374d2149a57 in us-west-2b
+Persistent cache EBS: vol-055b18a2e1e5fdf79 in us-west-2b
+Queue shutdown behavior: stop
 IMDS: IMDSv2 required
 Image:
-037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f
+037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486
 ```
 
 ### Persistent AWS cache volume
@@ -165,19 +222,17 @@ cache is a separate retained EBS volume:
 | Instance-store NVMe | 3.8 TiB on `g7e.12xlarge` | lost on terminate | Fast temporary run scratch and profiler data |
 | S3 | existing bucket | durable | Authoritative artifacts/results |
 
-Retained cache volumes currently exist in:
+The current retained cache volume exists in the AZ where the previous AWS-A1
+host launched:
 
 | Availability Zone | Volume ID | Status |
 | --- | --- | --- |
-| `us-west-2a` | `vol-052b8f4246bd0d909` | Retained fallback cache volume |
-| `us-west-2b` | `vol-055b18a2e1e5fdf79` | Retained fallback cache volume |
-| `us-west-2c` | `vol-0189cec8b1c5bb224` | Retained fallback cache volume |
-| `us-west-2d` | `vol-0746f5d3a6d2cd859` | Retained fallback cache volume |
+| `us-west-2b` | `vol-055b18a2e1e5fdf79` | Retained AWS cache volume |
 
 EBS volumes are Availability-Zone scoped. EXP-01 now lets AWS select a default
-subnet/AZ and then attaches the retained cache volume that matches the
-instance's actual AZ. The duplicate volumes were created after transient
-`g7e.12xlarge` capacity blocked fixed-AZ attempts.
+subnet/AZ only when matching cache volumes exist in every candidate AZ. After
+the extra AZ volumes were removed, the current A2 queue pins the `us-west-2b`
+subnet so the retained cache volume can attach.
 
 After the volume exists, record its ID in `cache_volume.volume_id` in
 `exp01_qualification.yaml`. The launch wrapper checks that the volume is

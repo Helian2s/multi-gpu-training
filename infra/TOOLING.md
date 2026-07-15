@@ -1,6 +1,6 @@
 # Tooling readiness
 
-Last checked: 2026-07-14
+Last checked: 2026-07-15
 
 This is a per-workstation operational status record, not a project-decision
 log. The approved toolset is maintained in `PROJECT_DECISIONS.md`; this file
@@ -44,10 +44,10 @@ containers with Buildx.
 | Native OCI image build | Docker Engine 29.1.3 daemon is running; Buildx 0.30.1 with BuildKit v0.26.2 is installed; Docker Hub manifest lookup succeeded; `docker run --rm --platform linux/amd64 alpine:3.20 uname -m` returned `x86_64`; local Docker images include pulled NGC bases, `multi-gpu-training-pytorch:local`, `multi-gpu-training-nemo:local`, and A2-prep PyTorch image `multi-gpu-training-pytorch:a2-prep-b328fa3bed00` (`sha256:cc0ab368ca60de1725a483cb48f5e13241c8fc3aaa5da4d62cf64b9d57d38056`); non-GPU container smoke passed for Python imports and `EXP-08` dry-run planning; Docker reports 65.28 GiB of images | Ready for local native `linux/amd64` pulls and image builds; project GPU validation still requires a provider host |
 | NVIDIA GPU runtime | `lspci` shows Intel integrated graphics only; `nvidia-smi` is not installed; no `/dev/nvidia*` devices are visible; Docker runtimes are `io.containerd.runc.v2` and `runc` only | No local CUDA validation; cloud GPU validation remains mandatory |
 | NVIDIA NGC access | SSM SecureString `/finetuning/ngc/api-key` exists for NGC authentication; Docker login to `nvcr.io` using that value succeeded with a temporary Docker config; manifest access succeeded for candidate bases `nvcr.io/nvidia/pytorch:26.06-py3` (`sha256:43c018d6a12963f1a1bad85ef8574b5c2a978eec2be0ebcacfb87f69e0d210e1`) and `nvcr.io/nvidia/nemo:26.06` (`sha256:64fcec59b0eeee2853761d16767c603e03e0aa4ba03becc9a7793bb0c46545e7`); local CPU-only inspection is recorded in `containers/base-image-compatibility.md` | Ready for NGC-derived Dockerfile design; candidate digests are verified but not yet accepted project image pins |
-| AWS API and ECR | AWS CLI 2.33.27 is authenticated with profile `finetuning-local` as account `037678282394` in `us-west-2`; private ECR repositories `multi-gpu-training-pytorch` and `multi-gpu-training-nemo` exist at `037678282394.dkr.ecr.us-west-2.amazonaws.com` with immutable tags, AES256 encryption, scan-on-push, and untagged-image cleanup after 7 days; Docker ECR credential helper 0.6.4 is installed and `~/.docker/config.json` maps the project ECR registry to `ecr-login`, but this helper failed with the current AWS login credential source during manual push and temporary Docker configs were used instead; candidate images were pushed with immutable tag `publish-test-20260713-36621dd` and ECR digests recorded in `containers/base-image-compatibility.md`; PyTorch and NeMo ECR scans completed with findings pending review; failed EXP-01 image `exp01-20260714-98ed22f` remains in ECR at digest `sha256:c36c871dcd7e1894f6666c81280e8416c556b44d50e9b4ff5247756472dff59c` and must not be reused for measurement; replacement EXP-01 image `exp01-20260714-f08a362` was pushed to ECR with digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`, status `ACTIVE`, and ECR scan `COMPLETE` with 62 Critical, 178 High, 248 Medium, 16 Low, and 4 Undefined findings; A2-prep image `a2-prep-b328fa3bed00` was pushed to ECR with digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`, status `ACTIVE`, and the same ECR scan severity counts; sampled Critical/High findings are in inherited OS/runtime packages including `linux-libc-dev`, `vim`, `python-pip`, `libxml2`, and `gnutls`; the shared PyTorch image scan disposition is recorded for short-lived qualification smoke runs only, while measured runs still require a refreshed image review or explicit measured-run exception; existing EC2 instance role `FinetuningGpuInstanceRole` has inline policy `FinetuningGpuEcrPullOnly` allowing pull-only access to the two project repositories; IAM simulation allows ECR authorization-token and pull actions and denies `ecr:PutImage`; `FinetuningGpuS3Access` default version `v5` permits `FinetuningGpuInstanceRole` to list/read/write the `artifacts/QUAL-A1/`, `artifacts/EXP-01/`, `artifacts/EXP-02/`, `artifacts/EXP-07/`, `artifacts/EXP-08/`, and `artifacts/EXP-09/` project artifact prefixes in the existing S3 bucket; IAM simulation allows list, object read/write, and multipart actions for `QUAL-A1` and EXP-02/07/08/09 and denies EXP-03; EXP-01 preflight passes with pinned AMI `ami-04b4c34375925db5f`, default public subnets, no-ingress security group `sg-0797f3b8520d4efa9`, IMDSv2 required, and the replacement image digest; hold-open EC2 `RunInstances` dry-run is authorized for `g7e.12xlarge` with confirmation phrase `launch EXP-01 AWS-A2 stop-after-90m`, shutdown behavior `stop`, maximum lifetime 90 minutes, and 15-minute post-run inspection; persistent AWS cache EBS volumes exist in all four `us-west-2` AZs as 300 GiB encrypted `gp3` with default 3000 IOPS and 125 MiB/s throughput, tagged `DeletePolicy=manual`: `us-west-2a` `vol-052b8f4246bd0d909`, `us-west-2b` `vol-055b18a2e1e5fdf79`, `us-west-2c` `vol-0189cec8b1c5bb224`, and `us-west-2d` `vol-0746f5d3a6d2cd859`; EXP-01 launch now lets AWS select the default subnet/AZ and attaches the cache volume matching the instance placement; the first EXP-01 EC2 launch used `g7e.12xlarge` in `us-west-2b`, validated SSM, two visible RTX PRO 6000 GPUs, ECR login/pull through the instance role, and S3 stage-out, then terminated itself; that run failed before measurement because the recorded image digest omitted the accepted EXP-01 directory and could not find `collect_exp01.sh`; EXP-01 SSM operator helpers are configured for status, one-off host/container commands, logs, monitoring, artifact listing, and interactive host/container shells; local `session-manager-plugin` 1.2.835.0 is installed; old `FT-EXP-00` `g6e.2xlarge` instance `i-0c769a18f50fd1fe6` was terminated and its 100 GiB and 250 GiB EBS volumes no longer exist | Host/IAM/ECR/S3/cache-volume qualification partially validated; smoke-only ECR scan disposition is recorded, measured-run scan disposition remains pending, and an explicitly approved launch is required to verify image execution and collect measurements |
+| AWS API and ECR | AWS CLI 2.33.27 is authenticated with profile `finetuning-local` as account `037678282394` in `us-west-2`; private ECR repositories `multi-gpu-training-pytorch` and `multi-gpu-training-nemo` exist at `037678282394.dkr.ecr.us-west-2.amazonaws.com` with immutable tags, AES256 encryption, scan-on-push, and untagged-image cleanup after 7 days; Docker ECR credential helper 0.6.4 is installed, but temporary Docker configs were used for known-good pushes; ECR pull-only instance-role simulation passes and denies `ecr:PutImage`; `FinetuningGpuS3Access` default version `v7` permits the instance role to read pinned inputs, write approved EXP/queue artifact prefixes, and write AWS-A1/A2 queue logs; the active shared AWS PyTorch queue image is `multi-gpu-training-pytorch@sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486`; it was pushed as `aws-a2-fp16fix-20260715-0230-4aa4672-dirty` after fixing FP16 AMP parameter precision; ECR scan completed with 62 critical, 178 high, 250 medium, 16 low, and 4 undefined findings, and measured-run disposition remains pending review; current A2 launch config is fixed to `us-west-2b`, subnet `subnet-0d50d4374d2149a57`, AMI `ami-04b4c34375925db5f`, no-ingress security group `sg-0797f3b8520d4efa9`, IMDSv2 required, and retained cache volume `vol-055b18a2e1e5fdf79`; local `session-manager-plugin` 1.2.835.0 is installed; old `FT-EXP-00` `g6e.2xlarge` instance `i-0c769a18f50fd1fe6` was terminated and its 100 GiB and 250 GiB EBS volumes no longer exist | AWS EXP-01 through EXP-09 raw measurements have been staged to S3; reports and completed status remain pending analysis/validation |
 | GitHub and GHCR | GitHub CLI 2.45.0 is authenticated as `Helian2s` through the local keyring; `gh repo view` reports `ADMIN` permission on `Helian2s/multi-gpu-training`; local `gh` auth was refreshed with package permission and now reports `write:packages`; `gh api /user/packages?package_type=container` succeeds and returns no container packages; Docker login to `ghcr.io` with the `gh` token succeeded using a temporary Docker config and was then logged out; no `multi-gpu-training-pytorch` or `multi-gpu-training-nemo` GHCR package exists yet | Ready for local GHCR publication checks; GHCR mirror images still need to be pushed and recorded by digest; Runpod still needs a separate pull-only GHCR credential rather than the broad local `gh` token |
-| Runpod | `runpodctl` 2.7.1-06a0a26 is installed at `/usr/bin/runpodctl`; local config exists at `~/.runpod/config.toml` with mode `0600` and `~/.runpod` mode `0700`; `runpodctl doctor -o json` passed API-key, API-connectivity, and SSH-key sync checks; `runpodctl registry list -o json` returned no registry auth entries; the active Runpod queue model is `RUNPOD-A1` for one-visible-GPU A100 SXM baselines, `RUNPOD-A2` for two-GPU A100 SXM readiness/communication/NeMo work, and `RUNPOD-A4` for the four-GPU hybrid | Ready for non-mutating Runpod identity/status checks; paid use remains blocked until the old exposed key revocation is confirmed, a pull-only GHCR registry auth is added, GHCR mirror images exist, and durable storage/stage-out is planned |
-| Local model and dataset inputs | `data/raw` is 3.6 GiB and `data/processed` is 550 MiB; `make verify-inputs` passed for 10 model files, 6 dataset files, and 9 processed files | Ready locally; durable S3 and Runpod copies are still pending |
+| Runpod | `runpodctl` 2.7.1-06a0a26 is installed at `/usr/bin/runpodctl`; local config exists at `~/.runpod/config.toml` with mode `0600` and `~/.runpod` mode `0700`; `runpodctl doctor -o json` passed API-key, API-connectivity, and SSH-key sync checks; `runpodctl registry list -o json` returned no registry auth entries; the active Runpod queue model is `RUNPOD-A1-PyTorch` for one-visible-GPU PyTorch smoke work, `RUNPOD-A2-PyTorch` for two-GPU readiness/communication/EXP-10, `RUNPOD-A2-Megatron` for one- and two-visible-GPU EXP-11 through EXP-13 work, and `RUNPOD-A4-Megatron` for EXP-14 | Ready for non-mutating Runpod identity/status checks; paid use remains blocked until the old exposed key revocation is confirmed, a pull-only GHCR registry auth is added, GHCR mirror images exist, and durable storage/stage-out is planned |
+| Local model and dataset inputs | `data/raw` is 3.6 GiB and `data/processed` is 550 MiB; `make verify-inputs` passed for 10 model files, 6 dataset files, and 9 processed files; the same pinned inputs are staged in S3 under `inputs/qwen3-wikitext-v1/` for AWS queues | Ready locally and staged for AWS; Runpod copies are still pending |
 
 ## Required next checks
 
@@ -59,27 +59,23 @@ containers with Buildx.
 4. Create a pull-only GHCR credential for Runpod and add it with
    `runpodctl registry create`; do not store the broad local `gh` token or any
    AWS credentials in Runpod.
-5. Upload the pinned input snapshots and generated manifest to versioned S3 and
-   Runpod network-volume paths, then verify their checksums.
-6. Verify the replacement image pull and container entry command during the
-   next AWS host qualification.
-7. For measured runs, rebuild/refresh the EXP-01 and shared AWS PyTorch images
-   or record explicit measured-run ECR scan exceptions; the current shared-image
-   disposition covers qualification smoke only.
-8. On the first host from each compute profile, run qualification for the
+5. Upload the pinned input snapshots and generated manifest to Runpod
+   network-volume paths, then verify their checksums; the AWS S3 copy is
+   staged under `inputs/qwen3-wikitext-v1/`.
+6. Review the replacement shared AWS PyTorch image scan for
+   `sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486`
+   and record the measured-run scan disposition. The completed scan reported 62
+   critical, 178 high, 250 medium, 16 low, and 4 undefined findings.
+7. Analyze and validate the AWS artifacts for EXP-01 through EXP-09, write the
+   experiment reports, and only then change catalog rows to `completed`.
+8. On the first host from each future compute profile, run qualification for the
    NVIDIA driver, container runtime, CUDA, NCCL, DCGM, Nsight Systems, Nsight
    Compute, storage, image pull, topology, and termination guard. These tools
    cannot be validated on the non-NVIDIA local workstation.
-9. During the next explicitly approved EXP-01 launch, verify that the active
-   AZ-matched cache volume attaches to the host, mounts at `/mnt/aws-cache`,
-   and becomes Docker's data root at `/mnt/aws-cache/docker`.
-10. For manual EXP-01 launches, verify the new lifecycle policy: capacity
-   failures before instance creation leave no instance, launched instances use
-   `InstanceInitiatedShutdownBehavior=stop`, the hard 90-minute systemd safety
-   timer is active from each boot, and success or failure gets a 15-minute
-   post-run inspection window before the instance stops.
-11. Add EXP-03/04/05/06 S3 artifact prefixes only if those proposed
-    experiments are accepted.
+9. Review the ECR scan disposition for the AWS-A1 queue image
+   `sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225`.
+   The completed scan reported 62 critical, 178 high, 248 medium, 16 low, and
+   4 undefined findings.
 
 ## Current AWS-A1 note
 
@@ -107,6 +103,34 @@ requests to `us-west-2a`, `us-west-2b`, `us-west-2c`, and `us-west-2d`; every
 request failed at `RunInstances` with `InsufficientInstanceCapacity`. No
 `QUAL-A1` instance was created, and all four retained cache volumes remained
 `available` and unattached afterward.
+
+On 2026-07-14/15, a later sequential AWS-A1 probe found `g7e.2xlarge` capacity
+in `us-west-2b` and launched `i-0e1acce0415f88196` with run ID
+`capacity-20260714T235106Z-aws-a1-us-west-2b`; the instance reached SSM online
+with one visible RTX PRO 6000 Blackwell GPU and `InstanceInitiatedShutdownBehavior=stop`.
+The launch bootstrap failed before cache mount because generated user-data had
+indented heredoc delimiters; a manual safety stop was scheduled for
+2026-07-15 00:45:12 UTC, and the launcher/user-data tests were fixed to catch
+that class of error.
+
+EXP-03 through EXP-06 are accepted for the AWS-A1 PyTorch queue. The queue image
+was built from the dirty worktree as
+`multi-gpu-training-pytorch:aws-a1-prep-local`, pushed to ECR as immutable tag
+`aws-a1-queue-20260715-0018-4aa4672-dirty`, and recorded in
+`infra/aws/a1_experiment_queue.yaml` at digest
+`sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225`.
+ECR scan completed with 62 critical, 178 high, 248 medium, 16 low, and
+4 undefined findings; measured-run disposition remains pending review.
+`FinetuningGpuS3Access` default version `v6` permits the instance role to read
+`inputs/qwen3-wikitext-v1/`, write `artifacts/EXP-03/` through
+`artifacts/EXP-06/`, and write queue logs under `artifacts/AWS-A1-PyTorch/`;
+IAM simulation allowed the new list/read/write actions and still denies input
+writes. The pinned local model, raw dataset, and processed token stream were
+uploaded to S3 under `inputs/qwen3-wikitext-v1/data/`, and the processed
+manifest is present. The AWS-A1 queue run
+`aws-a1-pytorch-20260715T003637Z` completed EXP-03, EXP-04, EXP-05, and EXP-06
+with exit status 0 and staged artifacts under the corresponding S3
+`artifacts/EXP-NN/runs/` prefixes.
 
 ## Current AWS capacity note
 
@@ -137,18 +161,59 @@ returned `InsufficientInstanceCapacity` before instance creation. The
 post-check again found no active Codex-managed instance, all retained cache
 volumes remained `available`, and the G/VT quota was still 96 vCPUs.
 
+## Current AWS-A2 queue note
+
+On 2026-07-15, the AWS-A2 PyTorch completion queue was prepared for
+`EXP-01-A2`, `EXP-02-A2V1`, `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`,
+`EXP-08-A2V2`, `EXP-09-A2V1`, and `EXP-09-A2V2`. The queue uses ECR image digest
+`sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486`,
+S3 input prefix `inputs/qwen3-wikitext-v1/`, queue log prefix
+`artifacts/AWS-A2-PyTorch/`, and the retained `us-west-2b` cache volume
+`vol-055b18a2e1e5fdf79`.
+
+An approved fixed-`us-west-2b` launch with run ID
+`aws-a2-pytorch-20260715T013926Z` created `i-0d72d0cbf38dbe44a`
+(`g7e.12xlarge`) and attached `vol-055b18a2e1e5fdf79`. The host reached SSM
+online and pulled the ECR image, but the queue failed before measurement at
+`EXP-01-A2` because generated user-data wrote run units through a TSV file and
+lost the shell command JSON fields. The queue log was uploaded to
+`s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/AWS-A2-PyTorch/runs/aws-a2-pytorch-20260715T013926Z/queue.log`.
+The local queue generator now emits shell-quoted `run_queue_unit` calls instead
+of the TSV loop, and `make check` covers the regression. The instance stopped
+through the configured guard; its 120 GiB root volume and the retained 300 GiB
+cache volume remained attached. The next retry included `EXP-08-A2V2` and had
+`stop_on_failure=false`, so a queue failure would upload logs and leave the
+instance running for manual inspection while the hard 300-minute safety
+shutdown remained scheduled.
+
+The approved retry with run ID `aws-a2-full-fp16fix-20260715T023252Z` completed
+all A2 run units with exit status 0: `EXP-01-A2`, `EXP-02-A2V1`,
+`EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`, `EXP-09-A2V1`,
+and `EXP-09-A2V2`. S3 artifacts are present under each corresponding
+`artifacts/EXP-NN/runs/aws-a2-full-fp16fix-20260715T023252Z/` prefix and the
+queue log is under
+`artifacts/AWS-A2-PyTorch/runs/aws-a2-full-fp16fix-20260715T023252Z/`. The run
+used the replacement image because the first retry failed at `EXP-02-A2V1`
+when FP16 training loaded model parameters as FP16 while also enabling
+`GradScaler`; the executor now keeps FP16+GradScaler model parameters in FP32
+and uses FP16 autocast. After the configured 15-minute success hold, instance
+`i-0d72d0cbf38dbe44a` stopped successfully in `us-west-2b`; its public IP was
+released. A local ignored mirror of the successful AWS artifacts exists at
+`artifacts/runs/aws-s3-mirror/`.
+
 ## Current Runpod preparation note
 
 On 2026-07-14, Runpod preparation became the next active path while preserving
 the technical ability to resume AWS when G7e capacity appears. The active
-Runpod queues are `RUNPOD-A1` for one-visible-GPU A100 SXM baselines,
-`RUNPOD-A2` for credential/tooling/storage/registry readiness plus the two-GPU
-NVLink/NCCL baseline and two-GPU NeMo/Megatron phases, and `RUNPOD-A4` for the
-four-GPU hybrid. The local workstation has `runpodctl` 2.7.1-06a0a26 installed;
-`runpodctl doctor -o json` passed API-key, API-connectivity, and SSH-key sync
-checks after the local Runpod config directory permissions were tightened. No
-paid Runpod resource has been launched from this workstation in the current
-session.
+Runpod queues are `RUNPOD-A1-PyTorch` for one-visible-GPU PyTorch smoke work,
+`RUNPOD-A2-PyTorch` for credential/tooling/storage/registry readiness plus the
+two-GPU NVLink/NCCL baseline, `RUNPOD-A2-Megatron` for one- and
+two-visible-GPU EXP-11 through EXP-13 NeMo/Megatron phases, and
+`RUNPOD-A4-Megatron` for the EXP-14 four-GPU hybrid. The local workstation has
+`runpodctl` 2.7.1-06a0a26 installed; `runpodctl doctor -o json` passed API-key,
+API-connectivity, and SSH-key sync checks after the local Runpod config
+directory permissions were tightened. No paid Runpod resource has been launched
+from this workstation in the current session.
 
 ## Security action
 

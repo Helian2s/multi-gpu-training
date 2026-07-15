@@ -9,7 +9,9 @@ from pathlib import Path
 
 import yaml
 
+from common.pytorch_executor import model_parameter_precision
 from common.experiment_runner import (
+    apply_image_override,
     build_plan,
     configured_variants,
     load_yaml,
@@ -121,6 +123,31 @@ class ExperimentRunnerContractTest(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["experiment_id"], "EXP-08")
         self.assertEqual(payload["variant_count"], 1)
+
+    def test_runtime_image_override_supplies_self_digest(self) -> None:
+        config = load_yaml(EXP08_CONFIG)
+        config["stack"]["image"] = None
+        image_ref = (
+            "037678282394.dkr.ecr.us-west-2.amazonaws.com/"
+            "multi-gpu-training-pytorch@sha256:"
+            "1111111111111111111111111111111111111111111111111111111111111111"
+        )
+        apply_image_override(config, image_ref)
+
+        self.assertEqual(config["stack"]["image"], image_ref)
+
+    def test_runtime_image_override_requires_digest(self) -> None:
+        config = load_yaml(EXP08_CONFIG)
+        with self.assertRaisesRegex(Exception, "immutable digest"):
+            apply_image_override(config, "repo/image:mutable-tag")
+
+    def test_fp16_grad_scaling_keeps_model_parameters_fp32(self) -> None:
+        self.assertEqual(
+            model_parameter_precision("fp16", {"gradient_scaling": "enabled"}),
+            "fp32",
+        )
+        self.assertEqual(model_parameter_precision("fp16", {}), "fp16")
+        self.assertEqual(model_parameter_precision("bf16", {"gradient_scaling": "enabled"}), "bf16")
 
 
 if __name__ == "__main__":

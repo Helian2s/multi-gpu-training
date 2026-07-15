@@ -67,6 +67,17 @@ def stack_image(config: dict[str, Any]) -> str | None:
     return image
 
 
+def apply_image_override(config: dict[str, Any], image_ref: str | None) -> None:
+    if not image_ref:
+        return
+    if "@sha256:" not in image_ref:
+        raise RunnerError("--image-ref must be an immutable digest reference")
+    stack = config.get("stack")
+    if not isinstance(stack, dict):
+        raise RunnerError("experiment config has no stack mapping")
+    stack["image"] = image_ref
+
+
 def configured_variants(config: dict[str, Any]) -> list[dict[str, Any]]:
     sweep = config.get("sweep")
     if not isinstance(sweep, dict):
@@ -229,6 +240,11 @@ def build_parser(description: str, default_config: Path) -> argparse.ArgumentPar
     parser.add_argument("--run-unit", action="append", default=[])
     parser.add_argument("--variant", action="append", default=[])
     parser.add_argument("--output-root")
+    parser.add_argument(
+        "--image-ref",
+        default=os.environ.get("MULTI_GPU_TRAINING_IMAGE_REF"),
+        help="Runtime immutable image reference supplied by provider queue tooling.",
+    )
     parser.add_argument("--write-plan", action="store_true")
     parser.add_argument("--list-variants", action="store_true")
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -255,6 +271,7 @@ def runner_main(
     config_path = args.config.resolve()
     try:
         config = load_yaml(config_path)
+        apply_image_override(config, args.image_ref)
         if experiment_id(config) != experiment:
             raise RunnerError(
                 f"runner is for {experiment}, config is for {experiment_id(config)}"

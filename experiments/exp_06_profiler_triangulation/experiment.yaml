@@ -1,0 +1,155 @@
+schema_version: 1
+
+experiment:
+  id: EXP-06
+  slug: profiler_triangulation
+  title: Profiler triangulation
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: pytorch
+  image: 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225
+
+hardware:
+  compute_profile: AWS-A1
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.2xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 1
+  visible_gpu_count: 1
+  visible_devices: [0]
+  single_node: true
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/a1_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: profiler
+  overrides:
+    precision: bf16_candidate
+    attention_shape: qwen3_like_gqa
+    profile_iterations: 8
+
+sweep:
+  baseline: EXP-06-A1-torch-profiler-math
+  variants:
+    - id: EXP-06-A1-torch-profiler-math
+      run_unit: EXP-06-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: profiler_triage
+      profiler: torch_profiler
+      target_backend: math
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      profile_iterations: 8
+      seed: 1337
+    - id: EXP-06-A1-torch-profiler-auto
+      run_unit: EXP-06-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: profiler_triage
+      profiler: torch_profiler
+      target_backend: automatic
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      profile_iterations: 8
+      seed: 1337
+    - id: EXP-06-A1-nsight-systems-math
+      run_unit: EXP-06-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: profiler_triage
+      profiler: nsight_systems
+      target_backend: math
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      seed: 1337
+    - id: EXP-06-A1-nsight-compute-auto
+      run_unit: EXP-06-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: profiler_triage
+      profiler: nsight_compute
+      target_backend: automatic
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      seed: 1337
+  fixed:
+    host_profile: AWS-A1
+    physical_instance_type: g7e.2xlarge
+    profile_target: EXP-05-style SDPA math and automatic backend cases
+    nvtx_ranges: attention backend range emitted around every measured iteration
+    unavailable_counter_handling: record unavailable tools or counters explicitly
+
+execution:
+  launcher: python experiments/exp_06_profiler_triangulation/run_exp06.py --execute
+  planning_command: python experiments/exp_06_profiler_triangulation/run_exp06.py --dry-run
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  timeout_seconds: 2700
+
+measurements:
+  required:
+    - immutable image digest
+    - driver, CUDA, PyTorch, Nsight Systems, and Nsight Compute availability
+    - GPU visibility and topology
+    - PyTorch Profiler operator table and Chrome trace
+    - NVTX ranges for the profiled attention backend
+    - external profiler availability or prepared command
+    - unavailable hardware counters recorded without replacement guesses
+  profilers:
+    - torch-profiler
+    - nsight-systems
+    - nsight-compute
+    - nvidia-smi
+  repetitions: 1
+
+correctness:
+  gates:
+    - mandatory AWS-A1 qualification passes
+    - exactly one visible CUDA device is used
+    - torch-profiler variants complete before external profiler status is interpreted
+    - profiler overhead is not mixed into EXP-05 steady-state timing
+    - unavailable external profilers are recorded as unavailable, not as failed experiments
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-06/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 1.5
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: 6.0
+  stop_conditions:
+    - qualification fails
+    - immutable EXP-06-capable image digest is missing
+    - torch profiler trace export fails
+    - any required artifact stage-out fails
+    - bounded run timeout is reached

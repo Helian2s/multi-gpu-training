@@ -1,0 +1,151 @@
+schema_version: 1
+
+experiment:
+  id: EXP-03
+  slug: microbatch_gradient_accumulation
+  title: Microbatch, global batch, and gradient accumulation
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: pytorch
+  image: 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225
+
+hardware:
+  compute_profile: AWS-A1
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.2xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 1
+  visible_gpu_count: 1
+  visible_devices: [0]
+  single_node: true
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/a1_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: benchmark
+  overrides:
+    input_lock: ../../configs/inputs.lock.yaml
+    model_id: Qwen/Qwen3-1.7B-Base
+    model_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+    dataset_id: Salesforce/wikitext
+    dataset_configuration: wikitext-103-raw-v1
+    dataset_revision: b08601e04326c79dfdd32d625aee71d232d685c3
+    preprocessing_version: qwen3-wikitext-v1
+    training_mode: full_parameter_continued_pretraining
+    objective: causal_next_token_cross_entropy
+    precision: bf16_candidate
+    sequence_length: 1024
+    warmup_optimizer_steps: 3
+    measured_optimizer_steps: 12
+    restore_checkpoint_between_variants: true
+
+sweep:
+  baseline: EXP-03-A1-mb1-acc8-global8
+  variants:
+    - id: EXP-03-A1-mb1-acc8-global8
+      run_unit: EXP-03-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      per_rank_microbatch_size: 1
+      gradient_accumulation_steps: 8
+      effective_global_batch_size: 8
+      seed: 1337
+    - id: EXP-03-A1-mb2-acc4-global8
+      run_unit: EXP-03-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      per_rank_microbatch_size: 2
+      gradient_accumulation_steps: 4
+      effective_global_batch_size: 8
+      seed: 1337
+    - id: EXP-03-A1-mb4-acc2-global8
+      run_unit: EXP-03-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      per_rank_microbatch_size: 4
+      gradient_accumulation_steps: 2
+      effective_global_batch_size: 8
+      seed: 1337
+    - id: EXP-03-A1-mb8-acc1-global8
+      run_unit: EXP-03-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      per_rank_microbatch_size: 8
+      gradient_accumulation_steps: 1
+      effective_global_batch_size: 8
+      seed: 1337
+  fixed:
+    host_profile: AWS-A1
+    physical_instance_type: g7e.2xlarge
+    data_parallel_size: 1
+    global_batch_formula: microbatch x accumulation_steps x data_parallel_size
+    effective_global_batch_size: 8
+    sequence_length: 1024
+    optimizer: AdamW with same settings across variants
+    checkpoint_restore: restore the same Qwen3 checkpoint before each variant
+
+execution:
+  launcher: python experiments/exp_03_microbatch_gradient_accumulation/run_exp03.py --execute
+  planning_command: python experiments/exp_03_microbatch_gradient_accumulation/run_exp03.py --dry-run
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+    NCCL_DEBUG: WARN
+  timeout_seconds: 3600
+
+measurements:
+  required:
+    - immutable image digest
+    - driver, CUDA, PyTorch, and NCCL versions
+    - GPU visibility and topology
+    - microbatch, accumulation steps, and effective global batch
+    - optimizer-step latency and tokens per second
+    - peak allocated and reserved GPU memory
+    - finite loss for every variant
+    - throughput trend as microbatch grows at fixed global batch
+  profilers:
+    - torch-profiler-optional
+    - nvidia-smi
+  repetitions: 3
+
+correctness:
+  gates:
+    - mandatory AWS-A1 qualification passes
+    - exactly one visible CUDA device is used
+    - every variant restores the same checkpoint and input stream
+    - effective global batch remains 8 for every compared variant
+    - final loss is finite for every variant
+    - any OOM variant is recorded as the memory boundary, not silently retried with changed settings
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-03/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 1.5
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: 6.0
+  stop_conditions:
+    - qualification fails
+    - immutable EXP-03-capable image digest is missing
+    - input manifest verification fails
+    - any required artifact stage-out fails
+    - bounded run timeout is reached

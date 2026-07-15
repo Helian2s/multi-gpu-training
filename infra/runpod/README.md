@@ -1,22 +1,25 @@
 # Runpod adapter plan
 
 Runpod supplies the A100 SXM NVLink environment that the AWS G7e profiles do not
-provide and hosts every NeMo/Megatron experiment in the current catalog. It is
-not a silent general fallback for AWS; broader Runpod use requires updating the
-planned compute mapping.
+provide. It hosts the Runpod PyTorch communication baseline and every
+NeMo/Megatron experiment in the current catalog. It is not a silent general
+fallback for AWS; broader Runpod use requires updating the planned compute
+mapping.
 
 The active Runpod execution queues are:
 
 | Queue | Resource profile | Purpose |
 | --- | --- | --- |
-| `RUNPOD-A1` | `RUNPOD-A100-SXM2` with one visible GPU | One-visible-GPU NeMo/Megatron baselines |
-| `RUNPOD-A2` | `RUNPOD-A100-SXM2` with two visible GPUs | Provider readiness, GHCR/storage validation, two-GPU qualification, EXP-10 NVLink/NCCL baseline, and two-GPU NeMo/Megatron phases |
-| `RUNPOD-A4` | `RUNPOD-A100-SXM4` | EXP-14 four-GPU TP=2 x DP=2 hybrid |
+| `RUNPOD-A1-PyTorch` | `RUNPOD-A100-SXM2` with one visible GPU | One-visible-GPU PyTorch image/runtime and storage smoke work |
+| `RUNPOD-A2-PyTorch` | `RUNPOD-A100-SXM2` with two visible GPUs | Provider readiness, GHCR/storage validation, two-GPU qualification, and EXP-10 NVLink/NCCL baseline |
+| `RUNPOD-A2-Megatron` | `RUNPOD-A100-SXM2` with one or two visible GPUs | One- and two-visible-GPU EXP-11 through EXP-13 NeMo/Megatron phases |
+| `RUNPOD-A4-Megatron` | `RUNPOD-A100-SXM4` | EXP-14 four-GPU TP=2 x DP=2 hybrid |
 
-The `RUNPOD-A*` labels are visible-GPU-count queue labels. Every run still
-records the exact Runpod resource profile, GPU type, billed GPU count, visible
-GPU count, datacenter, Pod ID, topology, visible mask, image digest, and billed
-resource.
+The `RUNPOD-A*` labels are execution queue labels. The suffix names the image
+and framework family, while the resource profile records the exact rented Pod.
+Every run still records the exact Runpod resource profile, GPU type, billed GPU
+count, visible GPU count, datacenter, Pod ID, topology, visible mask, image
+family, image digest, and billed resource.
 
 ## Accepted profiles
 
@@ -30,16 +33,18 @@ resource.
   measured process group. NVSwitch is recorded only when the observed topology
   proves it.
 
-It is used by `RUNPOD-A1` and `RUNPOD-A2`: one-visible-GPU EXP-11 through
-EXP-13 baselines, EXP-10, and two-visible-GPU EXP-11 through EXP-13 phases. A
-one-visible-GPU baseline still pays for both GPUs when it runs on this two-GPU
-Pod, so the full resource cost is recorded. Once the shared workload and NeMo
-image are accepted, stage the pinned image, converted model, and dataset once
-and reuse them across the grouped one-/two-visible-GPU queues when datacenter
+It is used by `RUNPOD-A1-PyTorch`, `RUNPOD-A2-PyTorch`, and
+`RUNPOD-A2-Megatron`: PyTorch one-/two-GPU readiness and EXP-10, plus the
+one- and two-visible-GPU EXP-11 through EXP-13 NeMo/Megatron phases. A
+one-visible-GPU phase still pays for both GPUs when it runs on this two-GPU Pod,
+so the full resource cost is recorded. Once the shared workload and image
+inputs are accepted, stage the pinned image, converted model, and dataset once
+and reuse them across grouped one-/two-visible-GPU phases when datacenter
 placement permits.
 
 `RUNPOD-A100-SXM4` has the same requirements with four rented and visible GPUs.
-It is used only by `RUNPOD-A4` / EXP-14 because TP=2 x DP=2 requires four ranks.
+It is used only by `RUNPOD-A4-Megatron` / EXP-14 because TP=2 x DP=2 requires
+four ranks.
 
 ## Immediate preparation gates
 
@@ -63,8 +68,8 @@ Before a paid Runpod Pod is launched:
   availability.
 - **Staging:** Pod volume/container storage for performance-sensitive working
   files.
-- **Images:** the immutable GHCR mirror of the image content published to AWS
-  ECR; use read-only GHCR registry credentials.
+- **Images:** the immutable GHCR mirror of the PyTorch or NeMo/Megatron image
+  content published to AWS ECR; use read-only GHCR registry credentials.
 - **Visibility:** use the exact two- or four-GPU profile. Only the two-GPU
   profile masks one device for controlled one-GPU TP/PP/CP baselines. Record
   both physical and visible device sets for every run.

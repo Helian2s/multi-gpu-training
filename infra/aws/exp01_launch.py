@@ -227,7 +227,7 @@ def cache_volume_user_data(config: dict[str, Any]) -> str:
     for az, az_volume_id in sorted((cache.get("volume_ids_by_az") or {}).items()):
         volume_cases.append(f'    {az}) CACHE_VOLUME_ID="{az_volume_id}" ;;')
     volume_case_block = "\n".join(volume_cases)
-    return textwrap.dedent(
+    template = textwrap.dedent(
         f"""\
         CACHE_VOLUME_ID="{volume_id}"
         CACHE_DEVICE_NAME="{cache['device_name']}"
@@ -248,7 +248,7 @@ def cache_volume_user_data(config: dict[str, Any]) -> str:
             instance_az=""
           fi
           case "${{instance_az}}" in
-        {volume_case_block}
+        __VOLUME_CASES__
           esac
           echo "INSTANCE_AZ=${{instance_az}}"
           echo "CACHE_VOLUME_ID=${{CACHE_VOLUME_ID}}"
@@ -333,7 +333,8 @@ def cache_volume_user_data(config: dict[str, Any]) -> str:
         configure_cache_volume_id
         configure_cache_volume
         """
-    ).rstrip()
+    )
+    return template.replace("__VOLUME_CASES__", volume_case_block).rstrip()
 
 
 def user_data_script(config: dict[str, Any], run_id: str, hold_open_on_exit: bool = False) -> str:
@@ -353,7 +354,7 @@ def user_data_script(config: dict[str, Any], run_id: str, hold_open_on_exit: boo
     command_array = container_command_array(config)
     visible_devices = cuda_visible_devices(config)
 
-    return textwrap.dedent(
+    template = textwrap.dedent(
         f"""\
         #!/usr/bin/env bash
         set -euo pipefail
@@ -368,7 +369,7 @@ def user_data_script(config: dict[str, Any], run_id: str, hold_open_on_exit: boo
         HOST_RUN_DIR="{host_run_dir}"
         CONTAINER_RUN_DIR="{container_run_dir}"
         CONTAINER_NAME="{container}"
-        CONTAINER_COMMAND=({command_array})
+        CONTAINER_COMMAND=(__CONTAINER_COMMAND__)
         CUDA_VISIBLE_DEVICES_VALUE="{visible_devices}"
         ARTIFACT_TARGET="{artifact_target}"
         MAX_LIFETIME_SECONDS="{lifetime_seconds}"
@@ -477,7 +478,11 @@ def user_data_script(config: dict[str, Any], run_id: str, hold_open_on_exit: boo
         set -e
         exit "${{docker_status}}"
         """
-    ).replace("__CACHE_VOLUME_SETUP__", cache_volume_user_data(config))
+    )
+    return (
+        template.replace("__CONTAINER_COMMAND__", command_array)
+        .replace("__CACHE_VOLUME_SETUP__", cache_volume_user_data(config))
+    )
 
 
 def selected_subnet(config: dict[str, Any]) -> str:

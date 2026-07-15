@@ -11,6 +11,7 @@ import argparse
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -123,9 +124,21 @@ def precision_dtype(torch: Any, precision: str | None) -> Any:
     raise RunnerError(f"unsupported measured precision for this executor: {precision}")
 
 
+def model_parameter_precision(precision: str | None, variant: dict[str, Any]) -> str | None:
+    if precision == "fp16" and variant.get("gradient_scaling") == "enabled":
+        return "fp32"
+    return precision
+
+
 def configure_precision(torch: Any, precision: str | None) -> None:
     torch.backends.cuda.matmul.allow_tf32 = precision == "tf32"
     torch.backends.cudnn.allow_tf32 = precision == "tf32"
+
+
+def seed_everything(torch: Any, seed: int) -> None:
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def read_tokens(tokens_path: Path, start_token: int, count: int) -> list[int]:
@@ -180,6 +193,25 @@ def load_model(torch: Any, model_dir: Path, precision: str | None, device: Any) 
     return model.to(device)
 
 
+def configure_activation_checkpointing(model: Any, variant: dict[str, Any]) -> str:
+    policy = variant.get("activation_checkpointing") or "disabled"
+    if policy in {"disabled", "none"}:
+        return "disabled"
+    if policy not in {"hf_gradient_checkpointing", "full_model"}:
+        raise RunnerError(f"unsupported activation checkpointing policy: {policy}")
+    if not hasattr(model, "gradient_checkpointing_enable"):
+        raise RunnerError("selected model does not expose gradient_checkpointing_enable")
+    if hasattr(model, "config") and hasattr(model.config, "use_cache"):
+        model.config.use_cache = False
+    try:
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+    except TypeError:
+        model.gradient_checkpointing_enable()
+    return "hf_gradient_checkpointing"
+
+
 def train_steps(
     *,
     config_path: Path,
@@ -199,7 +231,10 @@ def train_steps(
 
     try:
         paths = load_input_paths(config_path, config)
-        model = load_model(torch, paths["model"], precision, device)
+        seed_everything(torch, int(variant.get("seed", 1337)) + rank)
+        parameter_precision = model_parameter_precision(precision, variant)
+        model = load_model(torch, paths["model"], parameter_precision, device)
+        checkpointing_policy = configure_activation_checkpointing(model, variant)
         strategy = variant.get("strategy")
         if is_distributed and strategy == "fsdp":
             from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -226,7 +261,10 @@ def train_steps(
             fsdp_api = None
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
-        sequence_length = int(config["workload"]["overrides"].get("sequence_length", 1024))
+        sequence_length = int(
+            variant.get("sequence_length")
+            or config["workload"]["overrides"].get("sequence_length", 1024)
+        )
         batch_size = int(variant.get("per_rank_microbatch_size", 1))
         accumulation = int(variant.get("gradient_accumulation_steps", 1))
         warmup_steps = int(config["workload"]["overrides"].get("warmup_optimizer_steps", 1))
@@ -238,6 +276,7 @@ def train_steps(
         peak_allocated = 0
         total_steps = warmup_steps + measured_steps
         no_sync_requested = variant.get("synchronization") == "no_sync_until_optimizer_step"
+        torch.cuda.reset_peak_memory_stats(device)
 
         for step in range(total_steps):
             optimizer.zero_grad(set_to_none=True)
@@ -290,8 +329,19 @@ def train_steps(
             "rank": rank,
             "world_size": int(os.environ.get("WORLD_SIZE", "1")),
             "precision": precision,
+            "model_parameter_precision": parameter_precision,
             "strategy": strategy or ("ddp" if is_distributed else "single"),
             "fsdp_api": fsdp_api,
+            "activation_checkpointing": checkpointing_policy,
+            "sequence_length": sequence_length,
+            "per_rank_microbatch_size": batch_size,
+            "gradient_accumulation_steps": accumulation,
+            "effective_global_batch_size": int(
+                variant.get(
+                    "effective_global_batch_size",
+                    batch_size * accumulation * int(os.environ.get("WORLD_SIZE", "1")),
+                )
+            ),
             "measured_optimizer_steps": measured_steps,
             "mean_step_ms": sum(timings) / len(timings) if timings else None,
             "final_loss": losses[-1] if losses else None,
@@ -341,6 +391,249 @@ def gemm_microbenchmark(variant: dict[str, Any], output_dir: Path) -> dict[str, 
     }
     write_json(output_dir / "rank_0.json", result)
     return result
+
+
+def sdpa_dtype(torch: Any, precision: str | None) -> Any:
+    return precision_dtype(torch, precision or "bf16")
+
+
+def sdpa_context(torch: Any, backend: str) -> contextlib.AbstractContextManager[Any]:
+    if backend == "automatic":
+        return contextlib.nullcontext()
+    try:
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+
+        backend_map = {
+            "math": SDPBackend.MATH,
+            "flash_attention": SDPBackend.FLASH_ATTENTION,
+            "efficient_attention": SDPBackend.EFFICIENT_ATTENTION,
+        }
+        selected = backend_map.get(backend)
+        if selected is None:
+            raise RunnerError(f"unsupported SDPA backend: {backend}")
+        return sdpa_kernel([selected])
+    except ImportError:
+        flags = {
+            "enable_math": backend == "math",
+            "enable_flash": backend == "flash_attention",
+            "enable_mem_efficient": backend == "efficient_attention",
+        }
+        if not any(flags.values()):
+            raise RunnerError(f"unsupported SDPA backend on this PyTorch build: {backend}")
+        return torch.backends.cuda.sdp_kernel(**flags)
+
+
+def sdpa_tensors(torch: Any, variant: dict[str, Any], device: Any) -> tuple[Any, Any, Any, bool]:
+    batch_size = int(variant.get("batch_size", 2))
+    sequence_length = int(variant.get("sequence_length", 2048))
+    query_heads = int(variant.get("query_heads", 16))
+    key_value_heads = int(variant.get("key_value_heads", query_heads))
+    head_dim = int(variant.get("head_dim", 128))
+    dtype = sdpa_dtype(torch, variant.get("precision"))
+    seed_everything(torch, int(variant.get("seed", 1337)))
+    q = torch.randn(
+        (batch_size, query_heads, sequence_length, head_dim),
+        device=device,
+        dtype=dtype,
+    )
+    k = torch.randn(
+        (batch_size, key_value_heads, sequence_length, head_dim),
+        device=device,
+        dtype=dtype,
+    )
+    v = torch.randn(
+        (batch_size, key_value_heads, sequence_length, head_dim),
+        device=device,
+        dtype=dtype,
+    )
+    return q, k, v, query_heads != key_value_heads
+
+
+def call_sdpa(torch: Any, q: Any, k: Any, v: Any, enable_gqa: bool) -> Any:
+    import torch.nn.functional as functional
+
+    try:
+        return functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=0.0,
+            is_causal=True,
+            enable_gqa=enable_gqa,
+        )
+    except TypeError:
+        if enable_gqa:
+            repeat_factor = q.shape[1] // k.shape[1]
+            k = k.repeat_interleave(repeat_factor, dim=1)
+            v = v.repeat_interleave(repeat_factor, dim=1)
+        return functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=0.0,
+            is_causal=True,
+        )
+
+
+def attention_backend_benchmark(variant: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    torch = torch_modules()
+    require_cuda(torch, visible_devices(variant))
+    device = torch.device("cuda:0")
+    precision = variant.get("precision") or "bf16"
+    configure_precision(torch, precision)
+    backend = variant.get("backend") or variant.get("target_backend") or "automatic"
+    warmup = int(variant.get("warmup_iterations", 10))
+    iterations = int(variant.get("measured_iterations", 30))
+    compile_enabled = bool(variant.get("torch_compile"))
+    q, k, v, enable_gqa = sdpa_tensors(torch, variant, device)
+
+    def fn() -> Any:
+        with sdpa_context(torch, backend):
+            return call_sdpa(torch, q, k, v, enable_gqa)
+
+    if compile_enabled:
+        if not hasattr(torch, "compile"):
+            result = {
+                "variant_id": variant["id"],
+                "workload": "attention_backend_benchmark",
+                "backend": backend,
+                "torch_compile": True,
+                "status": "unsupported",
+                "detail": "torch.compile is unavailable in this PyTorch build",
+            }
+            write_json(output_dir / "rank_0.json", result)
+            return result
+        fn = torch.compile(fn, mode=variant.get("compile_mode", "reduce-overhead"))
+
+    try:
+        compile_or_first_start = time.monotonic()
+        for _ in range(warmup):
+            fn()
+        torch.cuda.synchronize(device)
+        compile_or_first_seconds = time.monotonic() - compile_or_first_start
+        torch.cuda.reset_peak_memory_stats(device)
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        output = None
+        for _ in range(iterations):
+            output = fn()
+        end.record()
+        torch.cuda.synchronize(device)
+    except (RuntimeError, RunnerError) as error:
+        result = {
+            "variant_id": variant["id"],
+            "workload": "attention_backend_benchmark",
+            "backend": backend,
+            "precision": precision,
+            "torch_compile": compile_enabled,
+            "status": "unsupported" if variant.get("allow_unsupported", True) else "failed",
+            "detail": str(error),
+        }
+        write_json(output_dir / "rank_0.json", result)
+        return result
+
+    elapsed_ms = start.elapsed_time(end)
+    result = {
+        "variant_id": variant["id"],
+        "workload": "attention_backend_benchmark",
+        "backend": backend,
+        "precision": precision,
+        "torch_compile": compile_enabled,
+        "status": "completed",
+        "batch_size": int(variant.get("batch_size", 2)),
+        "sequence_length": int(variant.get("sequence_length", 2048)),
+        "query_heads": int(variant.get("query_heads", 16)),
+        "key_value_heads": int(variant.get("key_value_heads", variant.get("query_heads", 16))),
+        "head_dim": int(variant.get("head_dim", 128)),
+        "enable_gqa": enable_gqa,
+        "warmup_iterations": warmup,
+        "measured_iterations": iterations,
+        "compile_or_first_warmup_seconds": compile_or_first_seconds,
+        "elapsed_ms": elapsed_ms,
+        "mean_iteration_ms": elapsed_ms / iterations,
+        "peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
+        "output_checksum": float(output.detach().float().sum().cpu()) if output is not None else None,
+    }
+    write_json(output_dir / "rank_0.json", result)
+    return result
+
+
+def torch_profiler_attention(variant: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    torch = torch_modules()
+    require_cuda(torch, visible_devices(variant))
+    device = torch.device("cuda:0")
+    precision = variant.get("precision") or "bf16"
+    configure_precision(torch, precision)
+    backend = variant.get("target_backend") or variant.get("backend") or "automatic"
+    q, k, v, enable_gqa = sdpa_tensors(torch, variant, device)
+    activities = [torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]
+    iterations = int(variant.get("profile_iterations", 8))
+    trace_path = output_dir / "torch_profiler_trace.json"
+    table_path = output_dir / "torch_profiler_key_averages.txt"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with torch.profiler.profile(
+        activities=activities,
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=False,
+    ) as profiler:
+        for _ in range(iterations):
+            torch.cuda.nvtx.range_push(f"sdpa_{backend}")
+            with sdpa_context(torch, backend):
+                call_sdpa(torch, q, k, v, enable_gqa)
+            torch.cuda.nvtx.range_pop()
+            profiler.step()
+    profiler.export_chrome_trace(str(trace_path))
+    table = profiler.key_averages().table(sort_by="cuda_time_total", row_limit=30)
+    table_path.write_text(table + "\n", encoding="utf-8")
+    result = {
+        "variant_id": variant["id"],
+        "workload": "profiler_triage",
+        "profiler": "torch_profiler",
+        "target_backend": backend,
+        "status": "completed",
+        "profile_iterations": iterations,
+        "trace": str(trace_path),
+        "key_averages": str(table_path),
+    }
+    write_json(output_dir / "rank_0.json", result)
+    return result
+
+
+def external_profiler_status(variant: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    profiler = variant.get("profiler")
+    binary = {"nsight_systems": "nsys", "nsight_compute": "ncu"}.get(profiler)
+    if binary is None:
+        raise RunnerError(f"unsupported profiler: {profiler}")
+    executable = shutil.which(binary)
+    target_backend = variant.get("target_backend") or variant.get("backend") or "automatic"
+    result = {
+        "variant_id": variant["id"],
+        "workload": "profiler_triage",
+        "profiler": profiler,
+        "target_backend": target_backend,
+        "status": "ready" if executable else "unavailable",
+        "binary": executable,
+        "detail": (
+            "external profiler is available; run the prepared command from the host shell"
+            if executable
+            else f"{binary} is not available in PATH"
+        ),
+        "prepared_command": (
+            f"{binary} profile python -m common.pytorch_executor --worker "
+            f"--config <experiment.yaml> --variant {variant['id']} --run-dir <run-dir>"
+        ),
+    }
+    write_json(output_dir / "rank_0.json", result)
+    return result
+
+
+def profiler_triage(variant: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    profiler = variant.get("profiler", "torch_profiler")
+    if profiler == "torch_profiler":
+        return torch_profiler_attention(variant, output_dir)
+    return external_profiler_status(variant, output_dir)
 
 
 def fault_case(variant: dict[str, Any], output_dir: Path) -> dict[str, Any]:
@@ -426,6 +719,10 @@ def run_worker(config_path: Path, variant_id: str, run_dir: Path) -> int:
     strategy = variant.get("strategy")
     if workload == "gemm_microbenchmark":
         result = gemm_microbenchmark(variant, output_dir)
+    elif workload == "attention_backend_benchmark":
+        result = attention_backend_benchmark(variant, output_dir)
+    elif workload == "profiler_triage":
+        result = profiler_triage(variant, output_dir)
     elif case is not None:
         result = fault_case(variant, output_dir)
     elif workload in {"transformer_training", "transformer_training_ddp"} or strategy in {"ddp", "fsdp"} or "world_size" in variant:
@@ -451,10 +748,45 @@ def worker_command(config_path: Path, variant_id: str, run_dir: Path) -> list[st
     ]
 
 
+def record_controller_result(
+    *,
+    run_dir: Path,
+    variant: dict[str, Any],
+    status: str,
+    detail: str,
+    elapsed_seconds: float | None = None,
+) -> None:
+    output_dir = run_dir / "raw" / variant["id"]
+    result = {
+        "variant_id": variant["id"],
+        "rank": 0,
+        "world_size": int(variant.get("world_size") or len(visible_devices(variant)) or 1),
+        "status": status,
+        "detail": detail,
+    }
+    if elapsed_seconds is not None:
+        result["elapsed_seconds"] = elapsed_seconds
+    if "case" in variant:
+        result["case"] = variant["case"]
+    if "precision" in variant:
+        result["precision"] = variant["precision"]
+    write_json(output_dir / "rank_0.json", result)
+    append_jsonl(run_dir / "metrics" / "variant_results.jsonl", result)
+
+
 def run_variant_subprocess(plan: dict[str, Any], variant: dict[str, Any]) -> None:
     run_dir = Path(plan["run_dir"])
     config_path = Path(plan["config_path"])
     variant_id = variant["id"]
+    admission_gate = variant.get("admission_gate")
+    if admission_gate:
+        record_controller_result(
+            run_dir=run_dir,
+            variant=variant,
+            status="skipped",
+            detail=f"admission gate not satisfied: {admission_gate}",
+        )
+        return
     devices = ",".join(str(device) for device in variant.get("visible_devices", []))
     env = os.environ.copy()
     if devices:
@@ -498,10 +830,27 @@ def run_variant_subprocess(plan: dict[str, Any], variant: dict[str, Any]) -> Non
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired as error:
+            if variant.get("expected_outcome") == "controlled_failure":
+                record_controller_result(
+                    run_dir=run_dir,
+                    variant=variant,
+                    status="expected_failure",
+                    detail=f"controlled timeout after {timeout_seconds}s; see {log_path}",
+                    elapsed_seconds=float(timeout_seconds),
+                )
+                return
             raise RunnerError(
                 f"variant {variant_id} exceeded timeout {timeout_seconds}s; see {log_path}"
             ) from error
     if completed.returncode != 0:
+        if variant.get("expected_outcome") == "controlled_failure":
+            record_controller_result(
+                run_dir=run_dir,
+                variant=variant,
+                status="expected_failure",
+                detail=f"controlled non-zero exit {completed.returncode}; see {log_path}",
+            )
+            return
         raise RunnerError(
             f"variant {variant_id} failed with exit code {completed.returncode}; see {log_path}"
         )

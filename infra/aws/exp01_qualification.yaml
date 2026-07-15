@@ -25,13 +25,10 @@ host:
 
 cache_volume:
   enabled: true
-  volume_id: vol-0746f5d3a6d2cd859
-  availability_zone: us-west-2d
+  volume_id: vol-055b18a2e1e5fdf79
+  availability_zone: us-west-2b
   volume_ids_by_az:
-    us-west-2a: vol-052b8f4246bd0d909
     us-west-2b: vol-055b18a2e1e5fdf79
-    us-west-2c: vol-0189cec8b1c5bb224
-    us-west-2d: vol-0746f5d3a6d2cd859
   size_gib: 300
   volume_type: gp3
   encrypted: true
@@ -45,8 +42,8 @@ cache_volume:
 image:
   registry: 037678282394.dkr.ecr.us-west-2.amazonaws.com
   repository: multi-gpu-training-pytorch
-  tag: exp01-20260714-f08a362
-  digest: sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f
+  tag: aws-a2-fp16fix-20260715-0230-4aa4672-dirty
+  digest: sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486
 
 identity:
   instance_profile: FinetuningGpuInstanceRole
@@ -57,11 +54,8 @@ artifacts:
 
 network:
   vpc_id: vpc-0480da876d161ad22
-  auto_select_subnet: true
+  auto_select_subnet: false
   subnet_ids:
-    - subnet-0e99f5711b201d98e # us-west-2d, default public subnet
-    - subnet-0e52a0c3ae6a086e8 # us-west-2c, default public subnet
-    - subnet-0c7c33d276fe5f654 # us-west-2a, default public subnet
     - subnet-0d50d4374d2149a57 # us-west-2b, default public subnet
   security_group_ids:
     - sg-0797f3b8520d4efa9 # ft-exp00-ssm-only; no ingress, all egress

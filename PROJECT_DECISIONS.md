@@ -1,7 +1,7 @@
 # Project decisions
 
 Status: Accepted
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## Document role and authority
 
@@ -43,15 +43,15 @@ a minimal piece is required to run or interpret an optimization experiment.
 ## Accepted infrastructure decisions
 
 1. **Supported cloud providers:** AWS EC2 and Runpod. AWS remains the
-   PyTorch/Blackwell/PCIe provider, and Runpod supplies the A100 SXM/NVLink
-   environment for the Runpod communication baseline and all NeMo/Megatron
-   experiments. AWS capacity failures do not cancel the AWS queues; Runpod
-   preparation may proceed in parallel while AWS launch configurations, ECR
-   images, S3 paths, and cache volumes remain available for later retry. No
-   measured run begins until the selected resource passes capacity, permission,
-   price, and runtime qualification. VT1 video-transcoding accelerators are part
-   of the AWS quota's name but are not CUDA GPUs and are not used by this
-   project.
+   PyTorch/Blackwell/PCIe provider for G7e work, and Runpod supplies the A100
+   SXM/NVLink environment for the Runpod PyTorch communication baseline and all
+   NeMo/Megatron experiments. AWS capacity failures do not cancel the AWS
+   queues; Runpod preparation may proceed in parallel while AWS launch
+   configurations, ECR images, S3 paths, and cache volumes remain available for
+   later retry. No measured run begins until the selected resource passes
+   capacity, permission, price, and runtime qualification. VT1 video-transcoding
+   accelerators are part of the AWS quota's name but are not CUDA GPUs and are
+   not used by this project.
 2. **GPU policy:** the project is not restricted to A100. It uses NVIDIA GPUs
    supported by the pinned CUDA, PyTorch, NeMo/Megatron, Transformer Engine, and
    profiler stack. Every result records provider, location, resource type,
@@ -73,12 +73,13 @@ a minimal piece is required to run or interpret an optimization experiment.
    hosts.
 5. **Active GPU count:** every experiment exposes one to four GPUs, but four
    GPUs are admitted only for the `TP=2 x DP=2` hybrid in the current plan. AWS
-   uses exact G7e profiles, with current EXP-02, EXP-07, EXP-08, and EXP-09 AWS-A2
-   work batched on one physical `AWS-A2` host by changing visible GPU count.
-   Runpod uses an exact two-GPU A100 SXM Pod for NVLink and one-/two-rank
-   NeMo/Megatron work and an exact four-GPU Pod for the hybrid. Reports record
-   both visible GPUs and the complete billed resource. No experiment may use
-   more than four GPUs.
+   uses exact G7e profiles, with current EXP-02, EXP-07, EXP-08, and EXP-09
+   AWS-A2 work batched on one physical `AWS-A2` host by changing visible GPU
+   count.
+   Runpod uses an exact two-GPU A100 SXM Pod for NVLink/PyTorch readiness and
+   one-/two-rank NeMo/Megatron work, and an exact four-GPU Pod for the hybrid.
+   Reports record both visible GPUs and the complete billed resource. No
+   experiment may use more than four GPUs.
 6. **No full 5D experiment:** the project will study parallelism dimensions
    separately and in useful smaller combinations, but will not run a complete
    five-dimensional parallelism layout.
@@ -92,15 +93,19 @@ a minimal piece is required to run or interpret an optimization experiment.
    GPU host should run only qualification, staging that requires the target
    environment, profiling, or experiment work.
 9. **Runpod profiles and framework placement:** `RUNPOD-A100-SXM2` is one Secure
-   Cloud Pod with two `NVIDIA A100-SXM4-80GB` GPUs for Runpod topology/NCCL and
-   every one-/two-rank NeMo/Megatron experiment, including TP/SP, PP, and CP.
-   `RUNPOD-A100-SXM4` is a separate four-GPU Pod used only for the NeMo/Megatron
-   `TP=2 x DP=2` hybrid. The active Runpod queue labels are `RUNPOD-A1` for
-   one-visible-GPU A100 SXM baselines, `RUNPOD-A2` for two-GPU A100 SXM
-   readiness, communication, and NeMo/Megatron work, and `RUNPOD-A4` for the
-   four-GPU hybrid. The Runpod `A` number denotes visible GPU count for the
-   queue; the billed Pod resource profile is still recorded separately in every
-   run artifact. AWS remains the PyTorch/Blackwell/PCIe environment.
+   Cloud Pod with two `NVIDIA A100-SXM4-80GB` GPUs for Runpod PyTorch
+   topology/NCCL work and every one-/two-rank NeMo/Megatron experiment,
+   including TP/SP, PP, and CP. `RUNPOD-A100-SXM4` is a separate four-GPU Pod
+   used only for the NeMo/Megatron `TP=2 x DP=2` hybrid. The active Runpod
+   queue labels are `RUNPOD-A1-PyTorch` for one-visible-GPU PyTorch readiness
+   and smoke work, `RUNPOD-A2-PyTorch` for two-GPU A100 SXM readiness,
+   communication, and EXP-10, `RUNPOD-A2-Megatron` for all one- and
+   two-visible-GPU EXP-11 through EXP-13 NeMo/Megatron phases, and
+   `RUNPOD-A4-Megatron` for EXP-14. The Runpod `A` number is a queue-level GPU
+   count label, while the exact billed Pod resource and visible-device mask are
+   recorded separately in every run artifact. `RUNPOD-A2-Megatron` deliberately
+   contains both one-visible-GPU and two-visible-GPU phases. AWS remains the
+   PyTorch/Blackwell/PCIe environment.
    Qualification must show NVLink between every selected pair; NVSwitch is
    recorded only if observed topology proves it.
 10. **One provider per experiment:** an experiment is assigned to AWS or
@@ -152,12 +157,13 @@ The NeMo container is itself based on NVIDIA's optimized PyTorch stack; these
 are two experiment environments, not containers that manage one another. Each
 experiment runs in exactly one selected image.
 
-AWS-A1 and AWS-A2 PyTorch work use the same AWS PyTorch runtime image when the
-software stack is identical. The EC2 profile, visible GPU count, qualification
-smoke, and measured workload are selected by provider configuration and
-run-unit arguments, not by baking separate A1/A2 images. Create a new PyTorch
-image only when source, dependencies, profiler tooling, or runtime contracts
-change.
+AWS-A1-PyTorch and AWS-A2-PyTorch work use the same AWS PyTorch runtime image
+when the software stack is identical. The EC2 profile, visible GPU count,
+qualification smoke, and measured workload are selected by provider
+configuration and run-unit arguments, not by baking separate A1/A2 images.
+Runpod PyTorch queues use the GHCR mirror of the same PyTorch image family
+when their software stack is identical. Create a new PyTorch image only when
+source, dependencies, profiler tooling, or runtime contracts change.
 
 Images are built once locally with Docker Buildx or by GitHub Actions and pushed
 to private Amazon ECR in `us-west-2` and to GHCR in the same build workflow.
@@ -213,11 +219,12 @@ catalog status.
 Current canonical experiment IDs use the two-digit form `EXP-NN` and define the
 recommended provider-blocked order: EXP-01 through EXP-09 are the AWS phase;
 EXP-10 through EXP-14 are the Runpod phase. The active execution queues are
-`AWS-A1`, `AWS-A2`, `RUNPOD-A1`, `RUNPOD-A2`, and `RUNPOD-A4`; AWS queues stay
-eligible for retry while Runpod preparation proceeds. Three-digit experiment
-IDs appearing in the decision log are historical identifiers and are not current
-catalog IDs. Each provider phase begins with its model-free topology/P2P/NCCL
-experiment: EXP-01 on AWS and EXP-10 on Runpod.
+`AWS-A1-PyTorch`, `AWS-A2-PyTorch`, `RUNPOD-A1-PyTorch`,
+`RUNPOD-A2-PyTorch`, `RUNPOD-A2-Megatron`, and `RUNPOD-A4-Megatron`; AWS
+queues stay eligible for retry while Runpod preparation proceeds. Three-digit
+experiment IDs appearing in the decision log are historical identifiers and are
+not current catalog IDs. Each provider phase begins with its model-free
+topology/P2P/NCCL experiment: EXP-01 on AWS and EXP-10 on Runpod.
 
 AWS launch planning may use run-unit IDs `QUAL-A1`, `QUAL-A2`,
 `EXP-NN-A1`, and `EXP-NN-A2V1/A2V2` to queue concrete compute-profile phases.
@@ -229,11 +236,12 @@ the current queue instead of being kept as standby experiment work. `QUAL-A4`
 or `EXP-NN-A4` require a new project decision before AWS four-GPU launch work
 resumes.
 
-Runpod execution planning uses GPU-count queue labels `RUNPOD-A1`,
-`RUNPOD-A2`, and `RUNPOD-A4` plus exact Pod resource profiles. These labels
-organize execution and artifacts; they are not canonical experiment IDs and do
-not replace the exact GPU type, billed GPU count, visible GPU count,
-datacenter, Pod ID, topology, or image digest in run records.
+Runpod execution planning uses framework-qualified queue labels
+`RUNPOD-A1-PyTorch`, `RUNPOD-A2-PyTorch`, `RUNPOD-A2-Megatron`, and
+`RUNPOD-A4-Megatron` plus exact Pod resource profiles. These labels organize
+execution and artifacts; they are not canonical experiment IDs and do not
+replace the exact GPU type, billed GPU count, visible GPU count, datacenter,
+Pod ID, topology, image family, or image digest in run records.
 
 For experiments that train a model, the accepted training mode is
 full-parameter continued pretraining with autoregressive next-token
@@ -977,6 +985,74 @@ timestamps were not captured; no earlier chronology is implied by their IDs.
   two-GPU comparisons, every run still records billed GPU count, visible GPU
   count, Pod resource profile, datacenter, topology, visible mask, image digest,
   and billed resource.
+
+### PD-027 — Split active execution queues by provider, GPU count, and framework
+
+- **Recorded:** 2026-07-14
+- **Status:** Accepted
+- **Supersedes:** PD-026 where it named the active execution queues. It
+  preserves the decision to keep AWS retryable while Runpod preparation
+  proceeds, the one-provider-per-experiment rule, the AWS G7e assignments, and
+  the Runpod A100 SXM assignments.
+- **Decision:** Use six active execution queues:
+  `AWS-A1-PyTorch`, `AWS-A2-PyTorch`, `RUNPOD-A1-PyTorch`,
+  `RUNPOD-A2-PyTorch`, `RUNPOD-A2-Megatron`, and `RUNPOD-A4-Megatron`.
+  `RUNPOD-A2-Megatron` includes both one-visible-GPU and two-visible-GPU
+  EXP-11 through EXP-13 phases on the two-GPU A100 SXM Pod. Do not create a
+  separate `RUNPOD-A1-Megatron` queue unless a later decision admits a distinct
+  one-GPU Megatron resource strategy. `RUNPOD-A4-Megatron` is currently
+  relevant only to EXP-14.
+- **Rationale:** GPU-count-only queue names made the image/runtime expectation
+  ambiguous because Runpod has both PyTorch/NCCL readiness work and
+  NeMo/Megatron training work. Framework-qualified queues make it clear which
+  image family, launch contract, and validation path applies before a paid Pod
+  is started.
+- **Consequences:** Queue names appear in launch plans, artifact manifests, and
+  reports. Resource profiles such as `AWS-A2`, `RUNPOD-A100-SXM2`, and
+  `RUNPOD-A100-SXM4` remain separate from queue labels. Every run still records
+  provider, billed resource, visible GPU count, image family, image digest,
+  topology, datacenter/Region, and cost guard metadata.
+
+### PD-028 — Limit the immediate AWS-A2 PyTorch launch queue to EXP-01/02/07/09
+
+- **Recorded:** 2026-07-15
+- **Status:** Accepted
+- **Supersedes:** PD-023 only where it kept `EXP-08-A2V2` in the current
+  AWS-A2 launch queue.
+- **Decision:** The immediate `AWS-A2-PyTorch` queue contains `EXP-01-A2`,
+  `EXP-02-A2V1`, `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`,
+  `EXP-09-A2V1`, and `EXP-09-A2V2`. `EXP-08` remains accepted as an AWS
+  PyTorch experiment, but it is not part of this queued launch and needs an
+  explicit later scheduling step before implementation or execution.
+- **Rationale:** The first acquired two-GPU AWS capacity should focus on the
+  communication baseline, precision checks, DDP scaling/overlap, and controlled
+  troubleshooting queue that was requested for immediate execution. Removing
+  EXP-08 from this launch keeps the queue shorter and avoids starting FSDP work
+  before the priority A2 results exist.
+- **Consequences:** Current AWS-A2 queue tooling, catalog run-unit maps, and
+  launch documentation must exclude `EXP-08-A2V2`. Reports must not imply that
+  an AWS-A2 run completed or attempted EXP-08 unless it is added back by a
+  later decision and launch plan.
+
+### PD-029 — Restore EXP-08 to the AWS-A2 completion queue
+
+- **Recorded:** 2026-07-15
+- **Status:** Accepted
+- **Supersedes:** PD-028.
+- **Decision:** The AWS-A2 PyTorch completion queue for finishing AWS
+  experiments EXP-01 through EXP-09 contains `EXP-01-A2`, `EXP-02-A2V1`,
+  `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`,
+  `EXP-09-A2V1`, and `EXP-09-A2V2`. The queue stops the instance after a fully
+  successful run but leaves the instance running after a queue failure for
+  manual inspection, while retaining the hard maximum-lifetime safety shutdown.
+- **Rationale:** The current operator goal is to complete all AWS experiments
+  EXP-01 through EXP-09, not only the shorter communication/precision/DDP/fault
+  subset. EXP-08 is accepted, has runnable PyTorch scaffolding, and is the
+  missing two-GPU AWS memory-sharding experiment.
+- **Consequences:** Current AWS-A2 queue tooling, catalog run-unit maps, and
+  launch documentation include `EXP-08-A2V2`. Any failed queue retry may leave
+  billable compute running until manual action or the hard safety shutdown, so
+  monitoring and follow-up are required.
 
 ## Primary references
 

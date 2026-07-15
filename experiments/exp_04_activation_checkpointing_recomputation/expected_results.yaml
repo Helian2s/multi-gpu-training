@@ -1,0 +1,25 @@
+schema_version: 1
+experiment_id: EXP-04
+
+correctness_gates:
+  - id: finite_loss
+    requirement: All measured variants have finite loss and gradients.
+  - id: comparable_update
+    requirement: Equivalent variants agree within a declared precision-specific tolerance.
+
+hypotheses:
+  - id: H1
+    metric: null
+    baseline: null
+    comparison: null
+    expected_direction: null # increase, decrease, unchanged, or bounded
+    threshold: null
+    rationale: null
+    confirm_when: null
+    reject_when: null
+    inconclusive_when: null
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - Compared runs use different immutable images or uncontrolled hardware topology.

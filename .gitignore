@@ -264,6 +264,7 @@ pytorch_model*.bin
 /results/
 
 # Experiment outputs and large profiler artifacts
+artifacts/runs/
 artifacts/**
 !artifacts/README.md
 *.nsys-rep

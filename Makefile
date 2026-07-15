@@ -8,14 +8,21 @@ VCS_REF ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 AWS_EXP01_CONFIG ?= infra/aws/exp01_qualification.yaml
 AWS_A1_CONFIG ?= infra/aws/a1_qualification.yaml
+AWS_A1_QUEUE_CONFIG ?= infra/aws/a1_experiment_queue.yaml
+AWS_A2_QUEUE_CONFIG ?= infra/aws/a2_experiment_queue.yaml
 AWS_EXP01_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
 AWS_EXP01_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 AWS_EXP01_HOLD_ARG = $(if $(HOLD_OPEN_ON_EXIT),--hold-open-on-exit,)
 AWS_A1_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
 AWS_A1_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 AWS_A1_HOLD_ARG = $(if $(HOLD_OPEN_ON_EXIT),--hold-open-on-exit,)
+AWS_A1_QUEUE_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
+AWS_A1_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
+AWS_A2_QUEUE_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
+AWS_A2_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
+AWS_A2_QUEUE_CONFIRM_ARG = $(if $(CONFIRM),--confirm "$(CONFIRM)",)
 
-.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a2-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts aws-a1-preflight aws-a1-launch-dry-run aws-a1-status aws-a1-host-shell aws-a1-container-shell aws-a1-host-command aws-a1-container-command aws-a1-logs aws-a1-monitor aws-a1-artifacts
+.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a1-dry-run exp-a2-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts aws-a1-preflight aws-a1-launch-dry-run aws-a1-status aws-a1-host-shell aws-a1-container-shell aws-a1-host-command aws-a1-container-command aws-a1-logs aws-a1-monitor aws-a1-artifacts aws-a1-queue-plan aws-a1-queue-script aws-a1-queue-run aws-a2-queue-plan aws-a2-queue-script aws-a2-queue-launch-dry-run aws-a2-queue-launch aws-a2-queue-run
 
 help:
 	@echo "make check"
@@ -32,6 +39,14 @@ help:
 	@echo "make aws-a1-logs [INSTANCE_ID=...]"
 	@echo "make aws-a1-monitor [INSTANCE_ID=...]"
 	@echo "make aws-a1-artifacts"
+	@echo "make aws-a1-queue-plan"
+	@echo "make aws-a1-queue-script [RUN_ID=...]"
+	@echo "make aws-a1-queue-run INSTANCE_ID=i-... [RUN_ID=...]"
+	@echo "make aws-a2-queue-plan"
+	@echo "make aws-a2-queue-script [RUN_ID=...]"
+	@echo "make aws-a2-queue-launch-dry-run [RUN_ID=...]"
+	@echo "make aws-a2-queue-launch RUN_ID=... CONFIRM='launch AWS-A2-PyTorch AWS-A2 stop-after-300m'"
+	@echo "make aws-a2-queue-run INSTANCE_ID=i-... [RUN_ID=...]"
 	@echo "make aws-exp01-preflight"
 	@echo "make aws-exp01-launch-dry-run [RUN_ID=...] [HOLD_OPEN_ON_EXIT=1]"
 	@echo "make aws-exp01-status"
@@ -46,10 +61,11 @@ help:
 	@echo "make prepare-environment"
 	@echo "make prepare-inputs"
 	@echo "make verify-inputs"
+	@echo "make exp-a1-dry-run"
 	@echo "make exp-a2-dry-run"
 
 check:
-	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py common/experiment_runner.py common/pytorch_executor.py experiments/_template/analyze.py experiments/exp_*/analyze.py experiments/exp_*/run_exp*.py
+	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py infra/aws/a1_queue.py infra/aws/a2_queue.py common/experiment_runner.py common/pytorch_executor.py experiments/_template/analyze.py experiments/exp_*/analyze.py experiments/exp_*/run_exp*.py
 	$(PYTHON) scripts/new_experiment.py --help
 	$(PYTHON) -m unittest discover -s tests
 	$(PYTHON) scripts/validate_repo.py
@@ -72,6 +88,12 @@ prepare-inputs:
 verify-inputs:
 	test -x "$(PREPARATION_PYTHON)" || (echo "run 'make prepare-environment' first"; exit 2)
 	$(PREPARATION_PYTHON) scripts/prepare_inputs.py --config configs/inputs.lock.yaml --verify-only
+
+exp-a1-dry-run:
+	$(PYTHON) experiments/exp_03_microbatch_gradient_accumulation/run_exp03.py --dry-run
+	$(PYTHON) experiments/exp_04_activation_checkpointing_recomputation/run_exp04.py --dry-run
+	$(PYTHON) experiments/exp_05_sdpa_flashattention_operator_fusion/run_exp05.py --dry-run
+	$(PYTHON) experiments/exp_06_profiler_triangulation/run_exp06.py --dry-run
 
 exp-a2-dry-run:
 	$(PYTHON) experiments/exp_02_mixed_precision_tensor_cores/run_exp02.py --dry-run
@@ -133,6 +155,34 @@ aws-a1-monitor:
 
 aws-a1-artifacts:
 	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_A1_CONFIG)" artifacts
+
+aws-a1-queue-plan:
+	$(PYTHON) infra/aws/a1_queue.py --queue-config "$(AWS_A1_QUEUE_CONFIG)" plan
+
+aws-a1-queue-script:
+	$(PYTHON) infra/aws/a1_queue.py --queue-config "$(AWS_A1_QUEUE_CONFIG)" $(AWS_A1_QUEUE_RUN_ARG) host-script
+
+aws-a1-queue-run:
+	@test -n "$(INSTANCE_ID)" || (echo "INSTANCE_ID is required, for example INSTANCE_ID=i-..."; exit 2)
+	$(PYTHON) infra/aws/a1_queue.py --queue-config "$(AWS_A1_QUEUE_CONFIG)" $(AWS_A1_QUEUE_INSTANCE_ARG) $(AWS_A1_QUEUE_RUN_ARG) run
+
+aws-a2-queue-plan:
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_QUEUE_CONFIG)" plan
+
+aws-a2-queue-script:
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_QUEUE_CONFIG)" $(AWS_A2_QUEUE_RUN_ARG) host-script
+
+aws-a2-queue-launch-dry-run:
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_QUEUE_CONFIG)" $(AWS_A2_QUEUE_RUN_ARG) launch-dry-run
+
+aws-a2-queue-launch:
+	@test -n "$(RUN_ID)" || (echo "RUN_ID is required, for example RUN_ID=aws-a2-pytorch-$$(date -u +%Y%m%dT%H%M%SZ)"; exit 2)
+	@test -n "$(CONFIRM)" || (echo "CONFIRM is required: launch AWS-A2-PyTorch AWS-A2 stop-after-300m"; exit 2)
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_QUEUE_CONFIG)" $(AWS_A2_QUEUE_RUN_ARG) launch $(AWS_A2_QUEUE_CONFIRM_ARG)
+
+aws-a2-queue-run:
+	@test -n "$(INSTANCE_ID)" || (echo "INSTANCE_ID is required, for example INSTANCE_ID=i-..."; exit 2)
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_QUEUE_CONFIG)" $(AWS_A2_QUEUE_INSTANCE_ARG) $(AWS_A2_QUEUE_RUN_ARG) run
 
 aws-exp01-status:
 	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_EXP01_CONFIG)" status

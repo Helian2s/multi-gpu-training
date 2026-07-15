@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import subprocess
+import tempfile
 import unittest
 
 from infra.aws.exp01_launch import (
@@ -29,7 +31,7 @@ class Exp01LaunchConfigTest(unittest.TestCase):
             image_reference(self.config),
             "037678282394.dkr.ecr.us-west-2.amazonaws.com/"
             "multi-gpu-training-pytorch@"
-            "sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f",
+            "sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486",
         )
 
     def test_confirmation_phrase_names_profile_and_lifetime(self):
@@ -56,18 +58,22 @@ class Exp01LaunchConfigTest(unittest.TestCase):
             "FinetuningGpuInstanceRole",
         )
         self.assertEqual(
-            self.request["SecurityGroupIds"],
+            self.request["NetworkInterfaces"][0]["Groups"],
             ["sg-0797f3b8520d4efa9"],
         )
-        self.assertNotIn("NetworkInterfaces", self.request)
+        self.assertEqual(
+            self.request["NetworkInterfaces"][0]["SubnetId"],
+            "subnet-0d50d4374d2149a57",
+        )
+        self.assertNotIn("SecurityGroupIds", self.request)
         self.assertTrue(
             self.request["BlockDeviceMappings"][0]["Ebs"]["DeleteOnTermination"]
         )
 
     def test_cache_volume_is_declared_but_not_root_block_device(self):
-        self.assertIn("vol-0746f5d3a6d2cd859", cache_volume_summary(self.config))
+        self.assertIn("vol-055b18a2e1e5fdf79", cache_volume_summary(self.config))
         self.assertEqual(self.config["cache_volume"]["size_gib"], 300)
-        self.assertEqual(self.config["cache_volume"]["availability_zone"], "us-west-2d")
+        self.assertEqual(self.config["cache_volume"]["availability_zone"], "us-west-2b")
         self.assertEqual(self.config["cache_volume"]["docker_data_root"], "/mnt/aws-cache/docker")
         self.assertEqual(len(self.request["BlockDeviceMappings"]), 1)
 
@@ -153,6 +159,27 @@ class Exp01LaunchConfigTest(unittest.TestCase):
         self.assertIn('CUDA_VISIBLE_DEVICES_VALUE="0"', user_data)
         self.assertIn("expected exactly 1 CUDA device", user_data)
         self.assertIn("artifacts/QUAL-A1", config["artifacts"]["durable_uri"])
+
+    def test_generated_user_data_is_valid_bash(self):
+        for config in (self.config, load_config(A1_CONFIG)):
+            for hold_open in (False, True):
+                request = build_run_instances_request(
+                    config,
+                    "syntax-test",
+                    hold_open_on_exit=hold_open,
+                )
+                user_data = base64.b64decode(request["UserData"]).decode("utf-8")
+                with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".sh") as handle:
+                    handle.write(user_data)
+                    handle.flush()
+                    completed = subprocess.run(
+                        ["bash", "-n", handle.name],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertNotIn("here-document", completed.stderr)
 
 
 if __name__ == "__main__":

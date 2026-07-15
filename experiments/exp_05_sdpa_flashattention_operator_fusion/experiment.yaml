@@ -1,0 +1,180 @@
+schema_version: 1
+
+experiment:
+  id: EXP-05
+  slug: sdpa_flashattention_operator_fusion
+  title: PyTorch SDPA/FlashAttention and operator fusion
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: pytorch
+  image: 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225
+
+hardware:
+  compute_profile: AWS-A1
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.2xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 1
+  visible_gpu_count: 1
+  visible_devices: [0]
+  single_node: true
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/a1_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: benchmark
+  overrides:
+    precision: bf16_candidate
+    attention_shape: qwen3_like_gqa
+    warmup_iterations: 10
+    measured_iterations: 40
+
+sweep:
+  baseline: EXP-05-A1-sdpa-math-bf16
+  variants:
+    - id: EXP-05-A1-sdpa-math-bf16
+      run_unit: EXP-05-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: attention_backend_benchmark
+      backend: math
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      warmup_iterations: 10
+      measured_iterations: 40
+      seed: 1337
+    - id: EXP-05-A1-sdpa-auto-bf16
+      run_unit: EXP-05-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: attention_backend_benchmark
+      backend: automatic
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      warmup_iterations: 10
+      measured_iterations: 40
+      seed: 1337
+    - id: EXP-05-A1-sdpa-flash-forced-bf16
+      run_unit: EXP-05-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: attention_backend_benchmark
+      backend: flash_attention
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      warmup_iterations: 10
+      measured_iterations: 40
+      allow_unsupported: true
+      seed: 1337
+    - id: EXP-05-A1-sdpa-math-compile-bf16
+      run_unit: EXP-05-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: attention_backend_benchmark
+      backend: math
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      warmup_iterations: 10
+      measured_iterations: 40
+      torch_compile: true
+      compile_mode: reduce-overhead
+      seed: 1337
+    - id: EXP-05-A1-sdpa-auto-compile-bf16
+      run_unit: EXP-05-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: attention_backend_benchmark
+      backend: automatic
+      precision: bf16
+      batch_size: 2
+      sequence_length: 2048
+      query_heads: 16
+      key_value_heads: 8
+      head_dim: 128
+      warmup_iterations: 10
+      measured_iterations: 40
+      torch_compile: true
+      compile_mode: reduce-overhead
+      seed: 1337
+  fixed:
+    host_profile: AWS-A1
+    physical_instance_type: g7e.2xlarge
+    attention_shape: qwen3_like_gqa
+    dropout: 0.0
+    causal_mask: true
+    unsupported_backend_handling: record_unsupported_or_fallback
+
+execution:
+  launcher: python experiments/exp_05_sdpa_flashattention_operator_fusion/run_exp05.py --execute
+  planning_command: python experiments/exp_05_sdpa_flashattention_operator_fusion/run_exp05.py --dry-run
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+    TORCH_LOGS: graph_breaks
+  timeout_seconds: 2700
+
+measurements:
+  required:
+    - immutable image digest
+    - driver, CUDA, PyTorch, and selected SDPA backend
+    - GPU visibility and topology
+    - attention backend status, fallback, or unsupported reason
+    - steady-state attention latency
+    - torch.compile warm-up time when enabled
+    - peak allocated GPU memory
+    - numerical checksum for output comparison
+  profilers:
+    - torch-profiler-optional
+    - nsight-systems-optional
+    - nvidia-smi
+  repetitions: 3
+
+correctness:
+  gates:
+    - mandatory AWS-A1 qualification passes
+    - exactly one visible CUDA device is used
+    - math backend completes as the correctness reference
+    - forced FlashAttention is measured only if PyTorch executes it successfully
+    - unsupported or fallback backends are recorded and excluded from native-backend comparisons
+    - compile cost is reported separately from steady-state timing
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-05/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 1.5
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: 6.0
+  stop_conditions:
+    - qualification fails
+    - immutable EXP-05-capable image digest is missing
+    - math backend fails
+    - any required artifact stage-out fails
+    - bounded run timeout is reached

@@ -1,0 +1,60 @@
+schema_version: 1
+queue:
+  id: AWS-A1-PyTorch
+  description: Sequential one-GPU AWS-A1 queue for EXP-03 through EXP-06.
+  compute_profile: AWS-A1
+  qualification_config: infra/aws/a1_qualification.yaml
+  maximum_lifetime_minutes: 240
+  post_queue_inspection_minutes: 15
+
+aws:
+  profile: finetuning-local
+  account_id: "037678282394"
+  region: us-west-2
+
+image:
+  registry: 037678282394.dkr.ecr.us-west-2.amazonaws.com
+  repository: multi-gpu-training-pytorch
+  tag: aws-a1-queue-20260715-0018-4aa4672-dirty
+  digest: sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225
+
+inputs:
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/inputs/qwen3-wikitext-v1/
+  host_data_dir: /mnt/aws-cache/inputs/qwen3-wikitext-v1/data
+  container_data_dir: /workspace/multi-gpu-training/data
+  required_manifest: processed/Qwen--Qwen3-1.7B-Base--ea980cb0a6c2__Salesforce--wikitext--b08601e04326__wikitext-103-raw-v1__qwen3-wikitext-v1/manifest.json
+
+artifacts:
+  host_root: /opt/multi-gpu-training/artifacts/runs
+  container_root: /workspace/multi-gpu-training/artifacts/runs
+
+container:
+  name_prefix: aws-a1
+  cuda_visible_devices: "0"
+  shm_size: 16g
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+    NCCL_DEBUG: WARN
+    TOKENIZERS_PARALLELISM: "false"
+
+run_units:
+  - run_unit: EXP-03-A1
+    experiment_id: EXP-03
+    runner: experiments/exp_03_microbatch_gradient_accumulation/run_exp03.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-03/
+    timeout_seconds: 3600
+  - run_unit: EXP-04-A1
+    experiment_id: EXP-04
+    runner: experiments/exp_04_activation_checkpointing_recomputation/run_exp04.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-04/
+    timeout_seconds: 3600
+  - run_unit: EXP-05-A1
+    experiment_id: EXP-05
+    runner: experiments/exp_05_sdpa_flashattention_operator_fusion/run_exp05.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-05/
+    timeout_seconds: 2700
+  - run_unit: EXP-06-A1
+    experiment_id: EXP-06
+    runner: experiments/exp_06_profiler_triangulation/run_exp06.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-06/
+    timeout_seconds: 2700

@@ -1,7 +1,7 @@
 # Proposed experiment catalog
 
 Document status: Planning worksheet; numbered experiments use per-row lifecycle status
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 Governing decisions: [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md)
 
 ## Document role and authority
@@ -28,8 +28,9 @@ The numbered rows begin with `Status=proposed`. Change an experiment to
 `accepted` or `deferred` during review; use `completed` only after its report is
 finished. Only accepted experiments receive an implementation directory.
 Canonical IDs `EXP-01` through `EXP-14` define the learning order. Execution is
-organized by the active queues `AWS-A1`, `AWS-A2`, `RUNPOD-A1`, `RUNPOD-A2`,
-and `RUNPOD-A4`; Runpod preparation can proceed while AWS capacity is
+organized by the active queues `AWS-A1-PyTorch`, `AWS-A2-PyTorch`,
+`RUNPOD-A1-PyTorch`, `RUNPOD-A2-PyTorch`, `RUNPOD-A2-Megatron`, and
+`RUNPOD-A4-Megatron`; Runpod preparation can proceed while AWS capacity is
 unavailable, and AWS remains available for later retry.
 
 ## Proposed shared workload contract
@@ -281,17 +282,20 @@ GPUs respectively. The digit records the billed physical GPU count; a run-unit
 suffix such as `A2V1` or `A2V2` records how many GPUs are visible inside a
 two-GPU `AWS-A2` host.
 
-Runpod queue names are operational GPU-count labels, not EC2-style instance
-types. `RUNPOD-A1`, `RUNPOD-A2`, and `RUNPOD-A4` describe one-, two-, and
-four-visible-GPU Runpod work queues. The exact billed Pod GPU count and GPU
-model remain recorded in the resource profile and every run artifact.
+Runpod queue names are operational provider/framework labels, not EC2-style
+instance types. `RUNPOD-A1-PyTorch`, `RUNPOD-A2-PyTorch`,
+`RUNPOD-A2-Megatron`, and `RUNPOD-A4-Megatron` describe the visible-GPU and
+framework path for Runpod work. `RUNPOD-A2-Megatron` deliberately includes both
+one-visible-GPU and two-visible-GPU Megatron phases on the same two-GPU A100 SXM
+resource profile. The exact billed Pod GPU count and GPU model remain recorded
+in the resource profile and every run artifact.
 
 | Profile | Provider resource | Physical GPUs | Normal visible GPUs | Purpose |
 | --- | --- | ---: | ---: | --- |
 | `AWS-A1` | AWS `us-west-2`, On-Demand `g7e.2xlarge` | 1 x RTX PRO 6000 Blackwell Server Edition 96 GB | 1 | One-GPU correctness, kernel, memory, and profiling runs that are not batched into AWS-A2 |
 | `AWS-A2` | AWS `us-west-2`, On-Demand `g7e.12xlarge` | 2 x RTX PRO 6000 Blackwell Server Edition 96 GB | 1 or 2 by visibility mask | Current AWS-A2 queue, including one-visible-GPU baselines and two-rank distributed runs |
 | `AWS-A4` | AWS `us-west-2`, On-Demand `g7e.24xlarge` | 4 x RTX PRO 6000 Blackwell Server Edition 96 GB | 4 | Not in the current AWS queue; consumes all 96 approved vCPUs and requires a new decision before use |
-| `RUNPOD-A100-SXM2` | Runpod Secure Cloud Pod, 2 x `NVIDIA A100-SXM4-80GB` | 2 x A100 80 GB SXM | 1 or 2 by visibility mask | Two-GPU NVLink measurements and all one-/two-rank NeMo/Megatron work |
+| `RUNPOD-A100-SXM2` | Runpod Secure Cloud Pod, 2 x `NVIDIA A100-SXM4-80GB` | 2 x A100 80 GB SXM | 1 or 2 by visibility mask | PyTorch NVLink/NCCL measurements and all one-/two-rank NeMo/Megatron work |
 | `RUNPOD-A100-SXM4` | Runpod Secure Cloud Pod, 4 x `NVIDIA A100-SXM4-80GB` | 4 x A100 80 GB SXM | 4 | The single four-rank hybrid TP=2 x DP=2 experiment |
 
 Runpod does not expose an EC2-style standardized instance type. The cloud class,
@@ -300,32 +304,46 @@ identify the resource. A Runpod profile is admissible only when qualification
 shows the intended GPUs on one physical host and NVLink between every selected
 pair. NVSwitch is recorded only if `nvidia-smi topo -m` proves it.
 
-Current execution queues:
+### Queue map by compute profile
 
-| Queue | Resource profile | Candidate work | Current posture |
-| --- | --- | --- | --- |
-| `AWS-A1` | AWS `AWS-A1` | `QUAL-A1`, EXP-03 through EXP-06 | Prepared; real all-AZ probe hit `InsufficientInstanceCapacity` |
-| `AWS-A2` | AWS `AWS-A2` | `QUAL-A2`, EXP-01, EXP-02, EXP-07, EXP-08, EXP-09 | Prepared; real launch attempts hit `InsufficientInstanceCapacity` |
-| `RUNPOD-A1` | Runpod `RUNPOD-A100-SXM2` with one visible GPU | One-visible-GPU NeMo/Megatron baselines for EXP-11, EXP-12, and EXP-13 | Proposed; depends on `RUNPOD-A2` readiness and NeMo/Megatron image validation |
-| `RUNPOD-A2` | Runpod `RUNPOD-A100-SXM2` with two visible GPUs | Runpod tooling/storage/registry readiness, two-GPU qualification, EXP-10, and two-GPU EXP-11/12/13 phases | Next preparation focus; paid launch blocked until key rotation and readiness checks |
-| `RUNPOD-A4` | Runpod `RUNPOD-A100-SXM4` | EXP-14 | Proposed; depends on local rank-map validation and successful two-GPU NeMo/Megatron work |
+The table below is the static launch map. Queues identify the framework/image
+path and visible-GPU phase; compute profiles identify the billed resource.
+Dynamic workstation, registry, credential, quota, and capacity readiness is
+tracked in [infra/TOOLING.md](infra/TOOLING.md).
 
-| ID | Experiment | Stack | GPUs | Provider and planned compute | Target GPU-hours | Status |
-| --- | --- | --- | ---: | --- | ---: | --- |
-| EXP-01 | AWS PCIe P2P and NCCL communication | NCCL/NVIDIA tools | 2 | AWS `AWS-A2` | 1.5-3.0 | accepted |
-| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.0-2.0 | accepted |
-| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
-| EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-A1` | 0.5-1.0 | proposed |
-| EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
-| EXP-06 | Profiler triangulation | PyTorch/NVIDIA tools | 1 | AWS `AWS-A1` | 0.75-1.5 | proposed |
-| EXP-07 | DDP scaling and communication overlap | PyTorch | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 2.0-4.0 | accepted |
-| EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch | 2 | AWS `AWS-A2` | 1.0-2.0 | accepted |
-| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch/NVIDIA tools | 1, 2 | AWS `AWS-A2` with `V1` and `V2` phases | 1.5-3.0 | accepted |
-| EXP-10 | Runpod NVLink P2P and NCCL communication | NCCL/NVIDIA tools | 2 | Runpod `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 1.5-3.0 | proposed |
-| EXP-11 | Tensor plus sequence parallelism | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A1` and `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 2.0-4.0 | proposed |
-| EXP-12 | Pipeline schedules and bubble size | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A1` and `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
-| EXP-13 | Context parallelism for long sequences | NeMo/Megatron | 1, 2 | Runpod `RUNPOD-A1` and `RUNPOD-A2` on `RUNPOD-A100-SXM2` | 1.0-2.0 | proposed |
-| EXP-14 | TP=2 x DP=2 for model width and throughput | NeMo/Megatron | 4 | Runpod `RUNPOD-A4` on `RUNPOD-A100-SXM4` | 2.0-3.0 | proposed |
+| Queue | Compute profile | Image family and registry side | Experiment run units | Current launch posture |
+| --- | --- | --- | --- | --- |
+| `AWS-A1-PyTorch` | `AWS-A1` | PyTorch image from ECR | `QUAL-A1`; `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, `EXP-06-A1` | Raw AWS measurements collected under run `aws-a1-pytorch-20260715T003637Z`; reports and completed status are pending validation |
+| `AWS-A2-PyTorch` | `AWS-A2` | PyTorch image from ECR | `QUAL-A2`; `EXP-01-A2`; `EXP-02-A2V1/A2V2`; `EXP-07-A2V1/A2V2`; `EXP-08-A2V2`; `EXP-09-A2V1/A2V2` | Raw AWS measurements collected under run `aws-a2-full-fp16fix-20260715T023252Z`; reports and completed status are pending validation |
+| `RUNPOD-A1-PyTorch` | `RUNPOD-A100-SXM2` | PyTorch image from GHCR | `QUAL-RUNPOD-A1-PyTorch` | Proposed one-visible-GPU smoke on the two-GPU A100 SXM profile |
+| `RUNPOD-A2-PyTorch` | `RUNPOD-A100-SXM2` | PyTorch image from GHCR | `QUAL-RUNPOD-A2-PyTorch`; `EXP-10-RUNPOD-A2-PyTorch` | Next Runpod PyTorch target; paid launch blocked until key revocation is confirmed, pull-only GHCR access exists, GHCR digest is recorded, and storage/stage-out is planned |
+| `RUNPOD-A2-Megatron` | `RUNPOD-A100-SXM2` | NeMo/Megatron image from GHCR | `QUAL-RUNPOD-A2-Megatron-V1/V2`; EXP-11 through EXP-13 V1/V2 Megatron units | Proposed; waits for Runpod PyTorch readiness, NeMo image validation, and implementation |
+| `RUNPOD-A4-Megatron` | `RUNPOD-A100-SXM4` | NeMo/Megatron image from GHCR | `QUAL-RUNPOD-A4-Megatron`; `EXP-14-RUNPOD-A4-Megatron` | Proposed only for EXP-14; waits for two-GPU Megatron validation and rank-map check |
+
+There is no current queue on `AWS-A4`; using it requires a new decision before
+AWS four-GPU work.
+
+As of 2026-07-15, the required AWS run units for EXP-01 through EXP-09 have
+all finished with exit status 0. This is complete **raw execution**, not final
+catalog completion: the report files still need analysis, validation, and
+written conclusions before the lifecycle status can change to `completed`.
+
+| ID | Experiment | Framework/tools needed | GPUs | Provider and planned compute | Docker image family | All queues and run units | Execution state | Target GPU-hours | Status |
+| --- | --- | --- | ---: | --- | --- | --- | --- | ---: | --- |
+| EXP-01 | AWS PCIe P2P and NCCL communication | CUDA/NCCL/NVIDIA tools, no training framework | 2 | AWS `AWS-A2-PyTorch` queue on `AWS-A2` | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A2-PyTorch`: `EXP-01-A2` | Raw execution complete: run `aws-a2-full-fp16fix-20260715T023252Z`, required exit status 0; report validation pending | 1.5-3.0 | accepted |
+| EXP-02 | Mixed precision and Tensor Cores in distributed training | PyTorch | 1, 2 | AWS `AWS-A2-PyTorch` queue on `AWS-A2` with `V1` and `V2` phases | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A2-PyTorch`: `EXP-02-A2V1`, `EXP-02-A2V2` | Raw execution complete: run `aws-a2-full-fp16fix-20260715T023252Z`, both required exit statuses 0; FP16 AMP parameter fix applied; report validation pending | 1.0-2.0 | accepted |
+| EXP-03 | Microbatch, global batch, and gradient accumulation | PyTorch | 1 | AWS `AWS-A1-PyTorch` queue on `AWS-A1` | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A1-PyTorch`: `EXP-03-A1` | Raw execution complete: run `aws-a1-pytorch-20260715T003637Z`, required exit status 0; report validation pending | 0.75-1.5 | accepted |
+| EXP-04 | Activation checkpointing/recomputation | PyTorch | 1 | AWS `AWS-A1-PyTorch` queue on `AWS-A1` | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A1-PyTorch`: `EXP-04-A1` | Raw execution complete: run `aws-a1-pytorch-20260715T003637Z`, required exit status 0; report validation pending | 0.5-1.0 | accepted |
+| EXP-05 | PyTorch SDPA/FlashAttention and operator fusion | PyTorch | 1 | AWS `AWS-A1-PyTorch` queue on `AWS-A1` | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A1-PyTorch`: `EXP-05-A1` | Raw execution complete: run `aws-a1-pytorch-20260715T003637Z`, required exit status 0; report validation pending | 0.75-1.5 | accepted |
+| EXP-06 | Profiler triangulation | PyTorch and NVIDIA profiler tools | 1 | AWS `AWS-A1-PyTorch` queue on `AWS-A1` | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A1-PyTorch`: `EXP-06-A1` | Raw execution complete: run `aws-a1-pytorch-20260715T003637Z`, required exit status 0; report validation pending | 0.75-1.5 | accepted |
+| EXP-07 | DDP scaling and communication overlap | PyTorch DDP and NCCL | 1, 2 | AWS `AWS-A2-PyTorch` queue on `AWS-A2` with `V1` and `V2` phases | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A2-PyTorch`: `EXP-07-A2V1`, `EXP-07-A2V2` | Raw execution complete: run `aws-a2-full-fp16fix-20260715T023252Z`, both required exit statuses 0; report validation pending | 2.0-4.0 | accepted |
+| EXP-08 | FSDP sharding and ZeRO-style memory trade-offs | PyTorch FSDP and DDP | 2 | AWS `AWS-A2-PyTorch` queue on `AWS-A2` | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A2-PyTorch`: `EXP-08-A2V2` | Raw execution complete: run `aws-a2-full-fp16fix-20260715T023252Z`, required exit status 0; report validation pending | 1.0-2.0 | accepted |
+| EXP-09 | Controlled troubleshooting and failure diagnosis | PyTorch, NCCL, and NVIDIA tools | 1, 2 | AWS `AWS-A2-PyTorch` queue on `AWS-A2` with `V1` and `V2` phases | PyTorch image, AWS ECR reference `multi-gpu-training-pytorch` | `AWS-A2-PyTorch`: `EXP-09-A2V1`, `EXP-09-A2V2` | Raw execution complete: run `aws-a2-full-fp16fix-20260715T023252Z`, both required exit statuses 0; report validation pending | 1.5-3.0 | accepted |
+| EXP-10 | Runpod NVLink P2P and NCCL communication | CUDA/NCCL/NVIDIA tools, no training framework | 2 | Runpod `RUNPOD-A2-PyTorch` queue on `RUNPOD-A100-SXM2` | PyTorch image, Runpod GHCR reference `multi-gpu-training-pytorch` | `RUNPOD-A2-PyTorch`: `EXP-10-RUNPOD-A2-PyTorch` | Not ready: proposed experiment; blocked by Runpod key confirmation, GHCR pull-only access, GHCR image digest, and storage plan | 1.5-3.0 | proposed |
+| EXP-11 | Tensor plus sequence parallelism | NeMo Framework with Megatron Core and Megatron Bridge | 1, 2 | Runpod `RUNPOD-A2-Megatron` queue on `RUNPOD-A100-SXM2` with one- and two-visible-GPU phases | NeMo/Megatron image, Runpod GHCR reference `multi-gpu-training-nemo` | `RUNPOD-A2-Megatron`: `EXP-11-RUNPOD-A2-Megatron-V1`, `EXP-11-RUNPOD-A2-Megatron-V2` | Not ready: proposed experiment; waits for Runpod PyTorch readiness, NeMo image validation, and implementation | 2.0-4.0 | proposed |
+| EXP-12 | Pipeline schedules and bubble size | NeMo Framework with Megatron Core and Megatron Bridge | 1, 2 | Runpod `RUNPOD-A2-Megatron` queue on `RUNPOD-A100-SXM2` with one- and two-visible-GPU phases | NeMo/Megatron image, Runpod GHCR reference `multi-gpu-training-nemo` | `RUNPOD-A2-Megatron`: `EXP-12-RUNPOD-A2-Megatron-V1`, `EXP-12-RUNPOD-A2-Megatron-V2` | Not ready: proposed experiment; waits for Runpod PyTorch readiness, NeMo image validation, and implementation | 1.0-2.0 | proposed |
+| EXP-13 | Context parallelism for long sequences | NeMo Framework with Megatron Core and Megatron Bridge | 1, 2 | Runpod `RUNPOD-A2-Megatron` queue on `RUNPOD-A100-SXM2` with one- and two-visible-GPU phases | NeMo/Megatron image, Runpod GHCR reference `multi-gpu-training-nemo` | `RUNPOD-A2-Megatron`: `EXP-13-RUNPOD-A2-Megatron-V1`, `EXP-13-RUNPOD-A2-Megatron-V2` | Not ready: proposed experiment; waits for Runpod PyTorch readiness, NeMo image validation, and implementation | 1.0-2.0 | proposed |
+| EXP-14 | TP=2 x DP=2 for model width and throughput | NeMo Framework with Megatron Core and Megatron Bridge | 4 | Runpod `RUNPOD-A4-Megatron` queue on `RUNPOD-A100-SXM4` | NeMo/Megatron image, Runpod GHCR reference `multi-gpu-training-nemo` | `RUNPOD-A4-Megatron`: `EXP-14-RUNPOD-A4-Megatron` | Not ready: proposed experiment; waits for two-GPU Megatron validation, local rank-map check, and four-GPU Pod approval | 2.0-3.0 | proposed |
 
 The 14 core row estimates sum to 17.25-33.5 measured GPU-hours. First-time
 debugging and profiler setup can make the billable total materially higher.
@@ -387,37 +405,15 @@ the catalog:
   hypothesis, it is removed from the current queue instead of being kept as
   standby work.
 
-Current AWS run units:
-
-| Run unit | Parent | Profile | Status | Purpose |
-| --- | --- | --- | --- | --- |
-| `QUAL-A1` | Shared AWS qualification | `AWS-A1` | in preparation | One-GPU host, image, storage, SSM, and smoke-test qualification |
-| `QUAL-A2` | Shared AWS qualification | `AWS-A2` | in preparation | Two-GPU host, one-/two-visible-GPU masks, image, storage, SSM, topology, P2P, and NCCL smoke qualification |
-| `EXP-01-A2` | EXP-01 | `AWS-A2` | accepted, in preparation | AWS PCIe P2P and NCCL baseline |
-| `EXP-02-A2V1` | EXP-02 | `AWS-A2`, one visible GPU | accepted, in preparation | Full precision and Tensor Core sweep on the acquired AWS-A2 host |
-| `EXP-02-A2V2` | EXP-02 | `AWS-A2`, two visible GPUs | accepted, in preparation | Bounded two-rank DDP precision check after EXP-01-A2 |
-| `EXP-03-A1` | EXP-03 | `AWS-A1` | proposed | Microbatch and accumulation sweep |
-| `EXP-04-A1` | EXP-04 | `AWS-A1` | proposed | Activation checkpointing/recomputation sweep |
-| `EXP-05-A1` | EXP-05 | `AWS-A1` | proposed | SDPA, FlashAttention, and fusion sweep |
-| `EXP-06-A1` | EXP-06 | `AWS-A1` | proposed | Profiler triangulation |
-| `EXP-07-A2V1` | EXP-07 | `AWS-A2`, one visible GPU | accepted, in preparation | DDP one-rank baseline on the acquired AWS-A2 host |
-| `EXP-07-A2V2` | EXP-07 | `AWS-A2`, two visible GPUs | accepted, in preparation | DDP two-rank scaling and communication-overlap point |
-| `EXP-08-A2V2` | EXP-08 | `AWS-A2`, two visible GPUs | accepted, in preparation | FSDP/DDP memory and communication comparison |
-| `EXP-09-A2V1` | EXP-09 | `AWS-A2`, one visible GPU | accepted, in preparation | One-rank failure and input-pipeline cases on the acquired AWS-A2 host |
-| `EXP-09-A2V2` | EXP-09 | `AWS-A2`, two visible GPUs | accepted, in preparation | Distributed fault cases that require two ranks |
-
-Current Runpod queues:
-
-| Queue | Parent | Resource profile | Status | Purpose |
-| --- | --- | --- | --- | --- |
-| `RUNPOD-A1` | EXP-11 through EXP-13 one-visible-GPU phases | `RUNPOD-A100-SXM2` with one visible GPU | proposed | One-visible-GPU NeMo/Megatron tensor, sequence, pipeline, and context-parallel baselines after `RUNPOD-A2` is qualified |
-| `RUNPOD-A2` | Shared Runpod readiness, EXP-10, and EXP-11 through EXP-13 two-visible-GPU phases | `RUNPOD-A100-SXM2` with two visible GPUs | in preparation | Rotate key, configure local tooling, validate registry/storage access, qualify two A100 SXM GPUs, and run the NVLink/NCCL baseline |
-| `RUNPOD-A4` | EXP-14 | `RUNPOD-A100-SXM4` | proposed | Four-rank TP=2 x DP=2 hybrid work after the two-GPU NeMo/Megatron path is correct |
-
-Runpod queue labels appear in launch queues, artifact manifests, and report
-subsections. They do not create separate experiment directories or replace the
-exact Pod ID, datacenter, GPU type, GPU count, topology, visible mask, or image
-digest recorded for each run.
+The queue map by compute profile is the authoritative static list of current
+run units. The per-experiment summary table repeats each experiment's queue
+membership from the experiment point of view. Runpod queue labels appear in
+launch queues, artifact manifests, and report subsections; they do not create
+separate experiment directories or replace the exact Pod ID, datacenter, GPU
+type, GPU count, topology, visible mask, image family, or image digest recorded
+for each run. There is no current `RUNPOD-A1-Megatron` queue; one-visible-GPU
+Megatron baselines are phases in `RUNPOD-A2-Megatron` so they stay paired with
+their two-GPU comparisons on the same two-GPU A100 SXM resource profile.
 
 ## Mandatory pre-run qualification
 
@@ -528,7 +524,9 @@ claiming that a named real company disclosed the incident.
 
 ### EXP-01: AWS PCIe P2P and NCCL communication
 
-**Planned compute:** AWS `AWS-A2` only.
+**Planned compute:** AWS `AWS-A2-PyTorch` queue on `AWS-A2` only. Run
+`EXP-01-A2` with two visible GPUs as the AWS PCIe communication baseline before
+the training experiments in the same queue.
 
 **Educational goal:** Learn how to turn raw GPU topology, peer-access, P2P
 bandwidth/latency, and NCCL collective measurements into a concrete explanation
@@ -559,11 +557,11 @@ EXP-07 and EXP-08.
 
 ### EXP-02: Mixed precision and Tensor Cores in distributed training
 
-**Planned compute:** AWS `AWS-A2` only. Run `EXP-02-A2V1` with one visible
-GPU for the full precision and Tensor Core sweep, then `EXP-02-A2V2` with two
-visible GPUs for a bounded DDP check after the AWS communication baseline is
-qualified. `EXP-02-A2V1` is billed as an AWS-A2 host and must not be reported
-as an exact one-GPU-instance measurement.
+**Planned compute:** AWS `AWS-A2-PyTorch` queue on `AWS-A2` only. Run
+`EXP-02-A2V1` with one visible GPU for the full precision and Tensor Core
+sweep, then `EXP-02-A2V2` with two visible GPUs for a bounded DDP check after
+the AWS communication baseline is qualified. `EXP-02-A2V1` is billed as an
+AWS-A2 host and must not be reported as an exact one-GPU-instance measurement.
 
 **Educational goal:** Learn how precision modes, Tensor Core eligibility,
 numerical stability, and DDP communication interact so a faster precision choice
@@ -614,7 +612,7 @@ changes the compute-to-communication balance in DDP.
 
 ### EXP-03: Microbatch, global batch, and gradient accumulation
 
-**Planned compute:** `AWS-A1` only.
+**Planned compute:** AWS `AWS-A1-PyTorch` queue on `AWS-A1` only.
 
 **Educational goal:** Learn how microbatch size, accumulation steps, and
 effective global batch are related, and how to improve throughput without
@@ -648,7 +646,7 @@ large batch unless loss normalization and synchronization are correct.
 
 ### EXP-04: Activation checkpointing/recomputation
 
-**Planned compute:** `AWS-A1`.
+**Planned compute:** AWS `AWS-A1-PyTorch` queue on `AWS-A1` only.
 
 **Educational goal:** Learn when recomputing activations is a good memory trade,
 how much memory it saves, and how to measure the added compute cost.
@@ -673,7 +671,7 @@ trade-off than recomputing everything for many workloads.
 
 ### EXP-05: PyTorch SDPA/FlashAttention and operator fusion
 
-**Planned compute:** `AWS-A1`.
+**Planned compute:** AWS `AWS-A1-PyTorch` queue on `AWS-A1` only.
 
 **Educational goal:** Learn how to distinguish attention-backend improvements
 from general graph/operator fusion effects using kernel evidence, memory
@@ -725,7 +723,7 @@ backend sweep unless attention itself is the independent variable.
 
 ### EXP-06: Profiler triangulation
 
-**Planned compute:** `AWS-A1`.
+**Planned compute:** AWS `AWS-A1-PyTorch` queue on `AWS-A1` only.
 
 **Educational goal:** Learn which profiler answers which performance question,
 and how to connect framework-level, system-timeline, and kernel-level evidence
@@ -753,10 +751,10 @@ objectives; this experiment teaches when each profiler is appropriate.
 
 ### EXP-07: DDP scaling and communication overlap
 
-**Planned compute:** AWS `AWS-A2` only. Run `EXP-07-A2V1` with one visible
-GPU and `EXP-07-A2V2` with two visible GPUs on the same physical AWS-A2 profile.
-No distributed job spans instances, and there is no current four-GPU AWS DDP
-run.
+**Planned compute:** AWS `AWS-A2-PyTorch` queue on `AWS-A2` only. Run
+`EXP-07-A2V1` with one visible GPU and `EXP-07-A2V2` with two visible GPUs on
+the same physical AWS-A2 profile. No distributed job spans instances, and
+there is no current four-GPU AWS DDP run.
 
 **Educational goal:** Learn how to evaluate DDP speedup, communication overlap,
 bucket behavior, and local-batch effects when moving from one rank to two ranks
@@ -791,7 +789,9 @@ that point later requires a new decision and a distinct AWS-A4 queue.
 
 ### EXP-08: FSDP sharding and ZeRO-style memory trade-offs
 
-**Planned compute:** AWS `AWS-A2` only.
+**Planned compute:** AWS `AWS-A2-PyTorch` queue on `AWS-A2` only. Run
+`EXP-08-A2V2` after the DDP overlap experiment in the same AWS-A2 completion
+queue.
 
 **Educational goal:** Learn what FSDP shards, which extra collectives it adds,
 and how to decide whether memory savings are worth the throughput and
@@ -821,10 +821,10 @@ a model that already fits comfortably.
 
 ### EXP-09: Controlled troubleshooting and failure diagnosis
 
-**Planned compute:** AWS `AWS-A2` only. Run `EXP-09-A2V1` with one visible
-GPU for one-rank failure and input-pipeline cases, then `EXP-09-A2V2` with two
-visible GPUs for distributed faults such as mismatched collectives, rank
-stragglers, and NCCL timeout evidence.
+**Planned compute:** AWS `AWS-A2-PyTorch` queue on `AWS-A2` only. Run
+`EXP-09-A2V1` with one visible GPU for one-rank failure and input-pipeline
+cases, then `EXP-09-A2V2` with two visible GPUs for distributed faults such as
+mismatched collectives, rank stragglers, and NCCL timeout evidence.
 
 **Educational goal:** Learn to identify common training and distributed failure
 classes from logs, utilization, memory, timeout, numerical, and timeline
@@ -860,7 +860,8 @@ the pipeline rather than NCCL is corrected.
 
 ### EXP-10: Runpod NVLink P2P and NCCL communication
 
-**Planned compute:** Runpod `RUNPOD-A2` queue on `RUNPOD-A100-SXM2` only.
+**Planned compute:** Runpod `RUNPOD-A2-PyTorch` queue on
+`RUNPOD-A100-SXM2` only.
 
 **Educational goal:** Learn how to qualify an A100 SXM/NVLink host and explain
 how NVLink topology changes P2P and collective behavior compared with the AWS
@@ -889,10 +890,10 @@ set communication expectations for EXP-11 through EXP-14.
 
 ### EXP-11: Tensor plus sequence parallelism
 
-**Planned compute:** Runpod `RUNPOD-A1` and `RUNPOD-A2` queues on
+**Planned compute:** Runpod `RUNPOD-A2-Megatron` queue on
 `RUNPOD-A100-SXM2` only. Use one and then two visible GPUs on the same billed
-two-GPU Pod so the TP=1 baseline and TP=2 run share the exact GPU type and host
-environment.
+two-GPU Pod so the TP=1 baseline and TP=2 run share the exact GPU type, image,
+and host environment.
 
 **Educational goal:** Learn which parts of a transformer layer tensor
 parallelism shards, how sequence parallelism reduces activation pressure, and
@@ -922,7 +923,7 @@ collective pattern; it does not consume another multiplicative GPU dimension.
 
 ### EXP-12: Pipeline schedules and bubble size
 
-**Planned compute:** Runpod `RUNPOD-A1` and `RUNPOD-A2` queues on
+**Planned compute:** Runpod `RUNPOD-A2-Megatron` queue on
 `RUNPOD-A100-SXM2` only. Use one and then two visible GPUs on the same billed
 Pod so PP=1 and PP=2 share the image, GPU type, and host environment.
 
@@ -951,7 +952,7 @@ the throughput limit.
 
 ### EXP-13: Context parallelism for long sequences
 
-**Planned compute:** Runpod `RUNPOD-A1` and `RUNPOD-A2` queues on
+**Planned compute:** Runpod `RUNPOD-A2-Megatron` queue on
 `RUNPOD-A100-SXM2` only. Use one and then two visible GPUs on the same billed
 Pod.
 
@@ -982,7 +983,8 @@ the crossover is the important result.
 
 ### EXP-14: TP=2 x DP=2 for model width and throughput
 
-**Planned compute:** Runpod `RUNPOD-A4` queue on `RUNPOD-A100-SXM4` only.
+**Planned compute:** Runpod `RUNPOD-A4-Megatron` queue on
+`RUNPOD-A100-SXM4` only.
 
 **Educational goal:** Learn how tensor-parallel and data-parallel process
 groups compose in a four-rank hybrid, and how to reason about memory,
@@ -1067,18 +1069,20 @@ from the numbered catalog.
 ## Proposed implementation order
 
 Experiment numbering defines the recommended learning order. Execution now uses
-five active queues so Runpod preparation can proceed while AWS G7e capacity is
-unavailable. A later experiment still starts only after its explicit
-prerequisites pass:
+six provider/framework queues so Runpod preparation can proceed while AWS G7e
+capacity is unavailable. A later experiment still starts only after its
+explicit prerequisites pass:
 
 1. **Preflight:** implement the mandatory qualification script.
 2. **AWS communication baseline:** EXP-01.
 3. **AWS execution fundamentals and profiling:** EXP-02 through EXP-06.
 4. **AWS data parallelism:** EXP-07 and EXP-08.
 5. **AWS troubleshooting:** EXP-09.
-6. **RUNPOD-A2:** Runpod readiness and EXP-10 communication baseline.
-7. **RUNPOD-A1/RUNPOD-A2:** EXP-11 through EXP-13 model-parallel dimensions.
-8. **RUNPOD-A4:** EXP-14 hybrid layout.
+6. **RUNPOD-A1-PyTorch/RUNPOD-A2-PyTorch:** Runpod PyTorch image, storage,
+   registry, and EXP-10 communication readiness.
+7. **RUNPOD-A2-Megatron:** EXP-11 through EXP-13 one- and two-GPU
+   model-parallel dimensions.
+8. **RUNPOD-A4-Megatron:** EXP-14 hybrid layout.
 9. **Synthesis:** write the final curriculum report and exam decision worksheet.
 
 Compute-profile sub-runs may be batched for cost efficiency, but their reports
@@ -1093,15 +1097,11 @@ To reduce idle cloud cost, group final runs only after local implementation and
 non-GPU tests pass. Every session begins with shared qualification and a short
 smoke test and ends only after artifacts reach durable storage.
 
-Active execution queues:
-
-| Queue | Resource profile | Visible-GPU phases | Candidate work |
-| --- | --- | ---: | --- |
-| `AWS-A1` | AWS `AWS-A1` | 1 | `QUAL-A1`, `EXP-03-A1`, `EXP-04-A1`, `EXP-05-A1`, `EXP-06-A1` |
-| `AWS-A2` | AWS `AWS-A2` | 1, 2 | `QUAL-A2`, `EXP-01-A2`, `EXP-02-A2V1`, `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`, `EXP-09-A2V1`, `EXP-09-A2V2` |
-| `RUNPOD-A1` | Runpod `RUNPOD-A100-SXM2` | 1 | One-visible-GPU EXP-11, EXP-12, and EXP-13 baselines |
-| `RUNPOD-A2` | Runpod `RUNPOD-A100-SXM2` | 2 | Runpod access/storage/registry readiness, two-GPU qualification, EXP-10, and two-GPU EXP-11/12/13 phases |
-| `RUNPOD-A4` | Runpod `RUNPOD-A100-SXM4` | 4 | EXP-14 |
+Use the queue map by compute profile above as the static launch plan. Within
+any paid session, run qualification first, then only the accepted or explicitly
+approved run units whose prerequisites are already satisfied. Dynamic provider
+readiness, exact image digests, credential state, and recent capacity attempts
+belong in [infra/TOOLING.md](infra/TOOLING.md), not in repeated catalog tables.
 
 There is no current AWS-A4 session. `AWS-A4` consumes the complete 96-vCPU
 G/VT quota, so reviving a four-GPU AWS DDP point requires a new decision,
@@ -1110,95 +1110,19 @@ instance is running in the Region. G6e, G5, G6, or another AWS family is not a
 silent fallback: changing the GPU or instance type changes the environment and
 requires updating the planned compute profile and expected results.
 
-### AWS-A1 queue preparation
+The intended batching order is:
 
-AWS-A1 can proceed independently while AWS-A2 capacity is unavailable. The
-qualification config uses `g7e.2xlarge`, one visible RTX PRO 6000 GPU, the
-shared AWS PyTorch image digest
-`sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`,
-the retained cache-volume map, and a one-GPU CUDA/NCCL smoke command.
-AWS-A1 and AWS-A2 do not need separate PyTorch images while their software
-stack is identical; the run-unit config selects the EC2 profile, visible GPU
-mask, and qualification or experiment command.
-The approved real `QUAL-A1` sequential capacity probe on 2026-07-14 tried
-`us-west-2a`, `us-west-2b`, `us-west-2c`, and `us-west-2d`; every pinned-AZ
-request failed before instance creation with AWS `InsufficientInstanceCapacity`,
-so no cleanup was required.
-
-| Queue order | Run unit | Visible GPUs | Current state | Required before launch |
-| ---: | --- | ---: | --- | --- |
-| 1 | `QUAL-A1` | 1 | in preparation | EC2 dry run is authorized; S3 stage-out v5 is validated for `artifacts/QUAL-A1/`; smoke-only ECR scan disposition is recorded; run one-GPU smoke with explicit launch confirmation |
-| 2 | `EXP-03-A1` | 1 | proposed | Accept and implement EXP-03 before creating an experiment directory or measurement launcher |
-| 3 | `EXP-04-A1` | 1 | proposed | Accept and implement EXP-04 before creating an experiment directory or measurement launcher |
-| 4 | `EXP-05-A1` | 1 | proposed | Accept and implement EXP-05 before creating an experiment directory or measurement launcher |
-| 5 | `EXP-06-A1` | 1 | proposed | Accept and implement EXP-06 before creating an experiment directory or measurement launcher |
-
-### AWS-A2 queue preparation
-
-When `AWS-A2` capacity becomes available, the AWS-A2 session should run the
-ready qualification and accepted work first, then stop unless later proposed
-experiments have already been accepted and implemented.
-The shared PyTorch image scan disposition currently covers qualification smoke
-only; measured experiment runs require either a rebuilt/refreshed image with
-reviewed scan results or an explicit measured-run exception.
-
-| Queue order | Run unit | Visible GPUs | Current state | Required before launch |
-| ---: | --- | ---: | --- | --- |
-| 1 | `QUAL-A2` | 1, 2 | in preparation | Fixed-image pull, cache-volume mount, SSM access, Docker root validation, topology capture, P2P smoke, NCCL smoke, and visibility-mask smoke for `V1` and `V2` |
-| 2 | `EXP-01-A2` | 2 | accepted, in preparation | Use ECR image digest `sha256:e17de82324539ff25707ebe267dede8e70c558005c9e9f0f0c6e3dbd7f9f9d8f`; stage out `artifacts/EXP-01/`; keep the instance available for the agreed manual inspection window |
-| 3 | `EXP-02-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate one-GPU smoke before measurement |
-| 4 | `EXP-02-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate DDP smoke before measurement |
-| 5 | `EXP-07-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate one-rank smoke before measurement |
-| 6 | `EXP-07-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate DDP smoke before measurement |
-| 7 | `EXP-08-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate DDP/FSDP smoke before measurement |
-| 8 | `EXP-09-A2V1` | 1 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate one-rank fault smoke before measurement |
-| 9 | `EXP-09-A2V2` | 2 | accepted, image published | Use ECR digest `sha256:ffde9efc9d69ea98fb4da0bb22736a7c7efdee9f72a21e825b6aa51377892bb8`; S3 stage-out v5 is validated; validate distributed fault smoke before measurement |
-
-### RUNPOD-A1 queue preparation
-
-`RUNPOD-A1` is the one-visible-GPU Runpod queue for NeMo/Megatron baselines.
-It uses the same exact `RUNPOD-A100-SXM2` billed resource profile as
-`RUNPOD-A2`, with one GPU exposed to the container, so one- and two-GPU phases
-share the same GPU type and host environment. Paid launch remains blocked until
-the exposed Runpod API key is rotated and local Runpod readiness checks pass.
-
-| Queue order | Work item | Visible GPUs | Current state | Required before launch |
-| ---: | --- | ---: | --- | --- |
-| 1 | `QUAL-RUNPOD-A1` | 1 | proposed | Validate one-visible-GPU masking and a short NeMo/Megatron training smoke on the qualified two-GPU Pod |
-| 2 | `EXP-11-RUNPOD-A1` | 1 | proposed | Accept and implement the TP/SP one-GPU baseline before measurement |
-| 3 | `EXP-12-RUNPOD-A1` | 1 | proposed | Accept and implement the PP one-GPU baseline before measurement |
-| 4 | `EXP-13-RUNPOD-A1` | 1 | proposed | Accept and implement the CP one-GPU baseline before measurement |
-
-### RUNPOD-A2 queue preparation
-
-`RUNPOD-A2` is the immediate Runpod preparation target. It uses the exact
-two-GPU `RUNPOD-A100-SXM2` resource profile and is responsible for provider
-readiness, GHCR pull access, durable Runpod storage planning, two-GPU topology
-qualification, the EXP-10 NVLink/NCCL baseline, and the two-GPU phases of
-EXP-11 through EXP-13.
-
-| Queue order | Work item | Visible GPUs | Current state | Required before launch |
-| ---: | --- | ---: | --- | --- |
-| 1 | Runpod credential rotation | 0 | blocked | Rotate the exposed API key outside chat and Git, then update only local Runpod auth |
-| 2 | Local Runpod tooling check | 0 | not started | Install/configure `runpodctl`, verify identity/status, and record readiness in `infra/TOOLING.md` |
-| 3 | Registry and storage readiness | 0 | not started | Configure GHCR pull-only access, choose network-volume layout, and plan durable artifact paths |
-| 4 | `QUAL-RUNPOD-A2` | 2 | proposed | Launch a guarded two-GPU Pod only after explicit approval; verify image pull, topology, NVLink, NCCL, profiler access, artifact stage-out, and a short NeMo/Megatron smoke |
-| 5 | `EXP-10-RUNPOD-A2` | 2 | proposed | Accept and implement EXP-10 before creating an experiment directory or measurement launcher |
-| 6 | `EXP-11-RUNPOD-A2` | 2 | proposed | Accept and implement tensor/sequence parallelism before measurement |
-| 7 | `EXP-12-RUNPOD-A2` | 2 | proposed | Accept and implement pipeline schedule experiments before measurement |
-| 8 | `EXP-13-RUNPOD-A2` | 2 | proposed | Accept and implement context-parallel experiments before measurement |
-
-### RUNPOD-A4 queue preparation
-
-`RUNPOD-A4` is the four-GPU A100 SXM hybrid queue for EXP-14 only. It is not
-launched until `RUNPOD-A2` proves the NeMo/Megatron stack and the local
-configuration check validates the TP=2 x DP=2 rank map.
-
-| Queue order | Work item | Visible GPUs | Current state | Required before launch |
-| ---: | --- | ---: | --- | --- |
-| 1 | Local rank-map check | 0 | proposed | Validate TP=2 x DP=2 process-group mapping without a paid Pod |
-| 2 | `QUAL-RUNPOD-A4` | 4 | proposed | Launch a guarded four-GPU Pod only after explicit approval; verify all four GPUs, topology, NVLink/NVSwitch evidence, and image/runtime parity |
-| 3 | `EXP-14-RUNPOD-A4` | 4 | proposed | Accept and implement the hybrid layout after the qualification and local rank-map checks pass |
+1. `AWS-A2-PyTorch`: qualification, EXP-01, then accepted EXP-02/07/08/09
+   phases when capacity and scan disposition allow.
+2. `AWS-A1-PyTorch`: qualification, then EXP-03 through EXP-06 as one
+   sequential one-GPU queue on an AWS-A1 host after queue smoke and ECR scan
+   review.
+3. `RUNPOD-A2-PyTorch` and `RUNPOD-A1-PyTorch`: provider readiness, PyTorch
+   image/storage smoke tests, and EXP-10 once accepted.
+4. `RUNPOD-A2-Megatron`: one- and two-visible-GPU EXP-11 through EXP-13 phases
+   after Runpod PyTorch readiness and NeMo image validation.
+5. `RUNPOD-A4-Megatron`: EXP-14 only after the two-GPU Megatron path and local
+   TP=2 x DP=2 rank-map check pass.
 
 AWS and Runpod results remain separate because GPU generation, memory
 technology, CPU allocation, and interconnect all differ.

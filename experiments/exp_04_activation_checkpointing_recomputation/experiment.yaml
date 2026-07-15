@@ -1,0 +1,154 @@
+schema_version: 1
+
+experiment:
+  id: EXP-04
+  slug: activation_checkpointing_recomputation
+  title: Activation checkpointing/recomputation
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: pytorch
+  image: 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:e12af417e7e905f30182122a95d73610e3acc9cb41829093d0265dfd6cca4225
+
+hardware:
+  compute_profile: AWS-A1
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.2xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 1
+  visible_gpu_count: 1
+  visible_devices: [0]
+  single_node: true
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/a1_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: benchmark
+  overrides:
+    input_lock: ../../configs/inputs.lock.yaml
+    model_id: Qwen/Qwen3-1.7B-Base
+    model_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+    dataset_id: Salesforce/wikitext
+    dataset_configuration: wikitext-103-raw-v1
+    dataset_revision: b08601e04326c79dfdd32d625aee71d232d685c3
+    preprocessing_version: qwen3-wikitext-v1
+    training_mode: full_parameter_continued_pretraining
+    objective: causal_next_token_cross_entropy
+    precision: bf16_candidate
+    sequence_length: 2048
+    warmup_optimizer_steps: 3
+    measured_optimizer_steps: 10
+    restore_checkpoint_between_variants: true
+
+sweep:
+  baseline: EXP-04-A1-no-checkpointing-seq2048
+  variants:
+    - id: EXP-04-A1-no-checkpointing-seq2048
+      run_unit: EXP-04-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      sequence_length: 2048
+      per_rank_microbatch_size: 1
+      gradient_accumulation_steps: 1
+      activation_checkpointing: disabled
+      seed: 1337
+    - id: EXP-04-A1-hf-gradient-checkpointing-seq2048
+      run_unit: EXP-04-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      sequence_length: 2048
+      per_rank_microbatch_size: 1
+      gradient_accumulation_steps: 1
+      activation_checkpointing: hf_gradient_checkpointing
+      seed: 1337
+    - id: EXP-04-A1-no-checkpointing-seq4096
+      run_unit: EXP-04-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      sequence_length: 4096
+      per_rank_microbatch_size: 1
+      gradient_accumulation_steps: 1
+      activation_checkpointing: disabled
+      seed: 1337
+    - id: EXP-04-A1-hf-gradient-checkpointing-seq4096
+      run_unit: EXP-04-A1
+      visible_devices: [0]
+      world_size: 1
+      workload: transformer_training
+      precision: bf16
+      sequence_length: 4096
+      per_rank_microbatch_size: 1
+      gradient_accumulation_steps: 1
+      activation_checkpointing: hf_gradient_checkpointing
+      seed: 1337
+  fixed:
+    host_profile: AWS-A1
+    physical_instance_type: g7e.2xlarge
+    data_parallel_size: 1
+    optimizer: AdamW with same settings across variants
+    checkpoint_restore: restore the same Qwen3 checkpoint before each variant
+    checkpointing_api: Hugging Face gradient_checkpointing_enable when supported by the selected model
+
+execution:
+  launcher: python experiments/exp_04_activation_checkpointing_recomputation/run_exp04.py --execute
+  planning_command: python experiments/exp_04_activation_checkpointing_recomputation/run_exp04.py --dry-run
+  environment:
+    CUDA_VISIBLE_DEVICES: "0"
+    NCCL_DEBUG: WARN
+  timeout_seconds: 3600
+
+measurements:
+  required:
+    - immutable image digest
+    - driver, CUDA, PyTorch, and Transformers versions
+    - GPU visibility and topology
+    - checkpointing policy and sequence length
+    - forward/backward optimizer-step latency
+    - tokens per second
+    - peak allocated and reserved GPU memory
+    - finite loss for every completed variant
+    - OOM or unsupported-policy boundary if encountered
+  profilers:
+    - torch-profiler-optional
+    - nvidia-smi
+  repetitions: 3
+
+correctness:
+  gates:
+    - mandatory AWS-A1 qualification passes
+    - exactly one visible CUDA device is used
+    - compared variants use identical model, inputs, precision, and optimizer settings
+    - final loss is finite for every completed variant
+    - checkpointing API and any fallback are recorded
+    - OOM boundaries are recorded without changing the planned sequence length or batch
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-04/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 1.0
+  maximum_instance_hours: 1.0
+  maximum_provider_cost: 4.0
+  stop_conditions:
+    - qualification fails
+    - immutable EXP-04-capable image digest is missing
+    - input manifest verification fails
+    - any required artifact stage-out fails
+    - bounded run timeout is reached

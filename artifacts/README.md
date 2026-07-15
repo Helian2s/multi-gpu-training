@@ -3,6 +3,12 @@
 This directory is the local collection point for generated experiment outputs.
 Its contents are ignored by Git except for this file.
 
+Use `artifacts/runs/aws-s3-mirror/` as the canonical local mirror for AWS S3
+artifact prefixes. The mirror preserves the S3 key below `artifacts/`, for
+example `artifacts/EXP-03/runs/<run-id>/` in S3 becomes
+`artifacts/runs/aws-s3-mirror/EXP-03/runs/<run-id>/` locally. Do not keep a
+second direct copy under `artifacts/runs/EXP-NN/` for the same S3 data.
+
 Use the following layout for every remote or local run:
 
 ```text
