@@ -1,0 +1,11 @@
+schema_version: 1
+experiment_id: EXP-12
+expected:
+  - More microbatches reduce the estimated two-stage pipeline bubble fraction.
+  - A balanced two-stage split should have lower maximum rank step time than an imbalanced split.
+  - Flush and 1F1B schedules should expose different activation lifetime and idle-time behavior.
+  - PP=2 introduces point-to-point activation and gradient traffic that PP=1 does not have.
+risks:
+  - The AWS adaptation measures PCIe point-to-point behavior, not A100 SXM/NVLink behavior.
+  - The initial workload is a bounded synthetic stage benchmark, not a full Qwen3 Megatron recipe.
+  - Profiler evidence may be added after the first timing run if Nsight permissions need tuning.

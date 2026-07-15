@@ -225,7 +225,8 @@ def validate_catalog() -> int:
                 f"{experiment_id} must reference exactly one provider, "
                 f"got: {provider_cell}"
             )
-        expected_provider = "AWS" if int(experiment_id[-2:]) <= 9 else "Runpod"
+        experiment_number = int(experiment_id[-2:])
+        expected_provider = "AWS" if experiment_number <= 9 or experiment_number == 12 else "Runpod"
         if providers != {expected_provider}:
             raise ValidationError(
                 f"{experiment_id} must be in the {expected_provider} phase, "

@@ -1,0 +1,35 @@
+schema_version: 1
+experiment_id: EXP-11
+
+correctness_gates:
+  - id: finite_loss
+    requirement: Every measured variant completes forward, backward, and optimizer steps on every rank.
+  - id: rank_metrics
+    requirement: Every rank writes a metrics JSON file and the run manifest is completed.
+
+hypotheses:
+  - id: H1
+    metric: peak_allocated_bytes_and_estimated_collective_bytes
+    baseline: EXP-11-RUNPOD-A2V1-tp1-sp-off
+    comparison: EXP-11-RUNPOD-A2V2-tp2-sp-off
+    expected_direction: bounded
+    threshold: TP=2 reports lower per-rank shard state and non-zero collective traffic.
+    rationale: Tensor parallelism shards layer dimensions but introduces communication.
+    confirm_when: TP=2 reduces per-rank memory-relevant shard dimensions and records collective bytes.
+    reject_when: TP=2 records no communication or no shard-size change.
+    inconclusive_when: Rank metrics or topology qualification are missing.
+  - id: H2
+    metric: local_sequence_length_and_peak_allocated_bytes
+    baseline: EXP-11-RUNPOD-A2V2-tp2-sp-off
+    comparison: EXP-11-RUNPOD-A2V2-tp2-sp-on
+    expected_direction: decrease
+    threshold: Sequence-parallel local sequence length is reduced by the TP degree.
+    rationale: Sequence parallelism changes sequence activation placement within the TP group.
+    confirm_when: The SP variant records reduced local sequence length and lower or bounded peak memory.
+    reject_when: The SP variant does not reduce local sequence length.
+    inconclusive_when: Memory is dominated by non-sequence tensors at this small shape.
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - Compared runs use different immutable images or uncontrolled hardware topology.

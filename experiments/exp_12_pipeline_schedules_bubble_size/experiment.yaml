@@ -1,0 +1,201 @@
+schema_version: 1
+
+experiment:
+  id: EXP-12
+  slug: pipeline_schedules_bubble_size
+  title: Pipeline schedules and bubble size
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: nemo-megatron
+  image: 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-nemo@sha256:ea7616a570d7e271eff25b4f3c0655a9910024e119171e2ead7569f6714b35fb
+
+hardware:
+  compute_profile: AWS-A2
+  provider: aws
+  location: us-west-2
+  resource_type: g7e.12xlarge
+  purchase_option: on-demand
+  gpu_type: RTX PRO 6000 Blackwell Server Edition
+  gpu_architecture: Blackwell SM 12.0
+  gpu_memory_gib: 96
+  physical_gpu_count: 2
+  visible_gpu_count: null
+  visible_devices: []
+  single_node: true
+  interconnect: pcie_peer_access_expected
+
+qualification:
+  required: true
+  command: infra/aws/exp01_preflight.py --config infra/aws/exp01_qualification.yaml
+
+workload:
+  shared_config: null
+  profile: benchmark
+  overrides:
+    model_family: synthetic_transformer_stage
+    framework: NeMo/Megatron Core runtime
+    training_mode: synthetic_full_backward_step
+    objective: pipeline_schedule_bubble_measurement
+    precision: bf16
+    restore_checkpoint_between_variants: false
+
+sweep:
+  baseline: EXP-12-A2V1-pp1-mb4-balanced
+  variants:
+    - id: EXP-12-A2V1-pp1-mb4-balanced
+      run_unit: EXP-12-A2V1
+      visible_devices: [0]
+      world_size: 1
+      workload: pipeline_schedule_benchmark
+      schedule: no_pipeline
+      pipeline_parallel_size: 1
+      num_microbatches: 4
+      microbatch_size: 1
+      sequence_length: 512
+      hidden_size: 1024
+      stage_layers: [4]
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: pp1_baseline
+    - id: EXP-12-A2V2-pp2-flush-mb2-balanced
+      run_unit: EXP-12-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: pipeline_schedule_benchmark
+      schedule: flush
+      pipeline_parallel_size: 2
+      num_microbatches: 2
+      microbatch_size: 1
+      sequence_length: 512
+      hidden_size: 1024
+      stage_layers: [2, 2]
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: gpipe_flush
+    - id: EXP-12-A2V2-pp2-flush-mb8-balanced
+      run_unit: EXP-12-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: pipeline_schedule_benchmark
+      schedule: flush
+      pipeline_parallel_size: 2
+      num_microbatches: 8
+      microbatch_size: 1
+      sequence_length: 512
+      hidden_size: 1024
+      stage_layers: [2, 2]
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: bubble_microbatch_sensitivity
+    - id: EXP-12-A2V2-pp2-1f1b-mb2-balanced
+      run_unit: EXP-12-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: pipeline_schedule_benchmark
+      schedule: one_f_one_b
+      pipeline_parallel_size: 2
+      num_microbatches: 2
+      microbatch_size: 1
+      sequence_length: 512
+      hidden_size: 1024
+      stage_layers: [2, 2]
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: one_f_one_b_schedule
+    - id: EXP-12-A2V2-pp2-1f1b-mb8-balanced
+      run_unit: EXP-12-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: pipeline_schedule_benchmark
+      schedule: one_f_one_b
+      pipeline_parallel_size: 2
+      num_microbatches: 8
+      microbatch_size: 1
+      sequence_length: 512
+      hidden_size: 1024
+      stage_layers: [2, 2]
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: bubble_microbatch_sensitivity
+    - id: EXP-12-A2V2-pp2-1f1b-mb8-imbalanced
+      run_unit: EXP-12-A2V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: pipeline_schedule_benchmark
+      schedule: one_f_one_b
+      pipeline_parallel_size: 2
+      num_microbatches: 8
+      microbatch_size: 1
+      sequence_length: 512
+      hidden_size: 1024
+      stage_layers: [1, 3]
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: stage_imbalance
+  fixed:
+    host_profile: AWS-A2
+    physical_instance_type: g7e.12xlarge
+    single_node: true
+    seeds: [1337]
+    precision: BF16
+    optimizer: AdamW with identical synthetic stage parameters per variant
+
+execution:
+  launcher: python experiments/exp_12_pipeline_schedules_bubble_size/run_exp12.py --execute
+  planning_command: python experiments/exp_12_pipeline_schedules_bubble_size/run_exp12.py --dry-run
+  environment:
+    NCCL_DEBUG: INFO
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+  timeout_seconds: 5400
+
+measurements:
+  required:
+    - immutable image digest
+    - driver, CUDA, PyTorch, NCCL, NeMo, Megatron Core, and Megatron Bridge versions
+    - GPU visibility and topology
+    - PP=1 baseline step time
+    - PP=2 flush and 1F1B step time
+    - microbatch-count sensitivity
+    - stage-imbalance sensitivity
+    - estimated pipeline bubble fraction
+    - per-rank peak allocated GPU memory
+    - point-to-point activation and gradient bytes
+  profilers:
+    - nvidia-smi
+    - torch-events
+    - nsight-systems-optional
+  repetitions: 1
+
+correctness:
+  gates:
+    - mandatory AWS-A2 qualification passes
+    - NeMo/Megatron image imports Megatron Core pipeline schedule modules
+    - PP world size matches visible GPU count
+    - all ranks complete the same number of synthetic backward steps
+    - every variant writes rank metrics and a manifest
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-12/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 2.0
+  maximum_instance_hours: 2.0
+  maximum_provider_cost: 25.0
+  stop_conditions:
+    - qualification fails
+    - immutable EXP-12-capable NeMo image digest is missing
+    - Megatron Core pipeline modules are unavailable
+    - any required artifact stage-out fails
+    - bounded run timeout is reached

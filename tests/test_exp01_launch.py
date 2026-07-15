@@ -57,23 +57,34 @@ class Exp01LaunchConfigTest(unittest.TestCase):
             self.request["IamInstanceProfile"]["Name"],
             "FinetuningGpuInstanceRole",
         )
-        self.assertEqual(
-            self.request["NetworkInterfaces"][0]["Groups"],
-            ["sg-0797f3b8520d4efa9"],
-        )
-        self.assertEqual(
-            self.request["NetworkInterfaces"][0]["SubnetId"],
-            "subnet-0d50d4374d2149a57",
-        )
-        self.assertNotIn("SecurityGroupIds", self.request)
+        if self.config["network"].get("auto_select_subnet"):
+            self.assertNotIn("NetworkInterfaces", self.request)
+            self.assertEqual(
+                self.request["SecurityGroupIds"],
+                ["sg-0797f3b8520d4efa9"],
+            )
+        else:
+            self.assertEqual(
+                self.request["NetworkInterfaces"][0]["Groups"],
+                ["sg-0797f3b8520d4efa9"],
+            )
+            self.assertEqual(
+                self.request["NetworkInterfaces"][0]["SubnetId"],
+                self.config["network"]["subnet_ids"][0],
+            )
+            self.assertNotIn("SecurityGroupIds", self.request)
         self.assertTrue(
             self.request["BlockDeviceMappings"][0]["Ebs"]["DeleteOnTermination"]
         )
 
     def test_cache_volume_is_declared_but_not_root_block_device(self):
-        self.assertIn("vol-055b18a2e1e5fdf79", cache_volume_summary(self.config))
+        self.assertIn(self.config["cache_volume"]["volume_id"], cache_volume_summary(self.config))
         self.assertEqual(self.config["cache_volume"]["size_gib"], 300)
-        self.assertEqual(self.config["cache_volume"]["availability_zone"], "us-west-2b")
+        self.assertEqual(self.config["cache_volume"]["availability_zone"], "us-west-2a")
+        self.assertEqual(
+            set(self.config["cache_volume"]["volume_ids_by_az"]),
+            {"us-west-2a", "us-west-2b", "us-west-2c", "us-west-2d"},
+        )
         self.assertEqual(self.config["cache_volume"]["docker_data_root"], "/mnt/aws-cache/docker")
         self.assertEqual(len(self.request["BlockDeviceMappings"]), 1)
 

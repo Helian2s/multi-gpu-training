@@ -45,6 +45,16 @@ from infra.aws.exp01_ops import select_running_instance, send_ssm_command
 
 
 DEFAULT_QUEUE_CONFIG = REPOSITORY_ROOT / "infra" / "aws" / "a2_experiment_queue.yaml"
+DEFAULT_A2_PYTORCH_ORDER = [
+    "EXP-01-A2",
+    "EXP-02-A2V1",
+    "EXP-02-A2V2",
+    "EXP-07-A2V1",
+    "EXP-07-A2V2",
+    "EXP-08-A2V2",
+    "EXP-09-A2V1",
+    "EXP-09-A2V2",
+]
 
 
 class QueueError(RuntimeError):
@@ -97,23 +107,13 @@ def validate_queue(config: dict[str, Any]) -> None:
         raise QueueError("queue schema_version must be 1")
     if config["queue"]["compute_profile"] != "AWS-A2":
         raise QueueError("this runner only supports AWS-A2")
-    expected = [
-        "EXP-01-A2",
-        "EXP-02-A2V1",
-        "EXP-02-A2V2",
-        "EXP-07-A2V1",
-        "EXP-07-A2V2",
-        "EXP-08-A2V2",
-        "EXP-09-A2V1",
-        "EXP-09-A2V2",
-    ]
     seen: set[str] = set()
     for item in config.get("run_units", []):
         run_unit = item.get("run_unit")
         experiment_id = item.get("experiment_id")
-        if not isinstance(run_unit, str) or not run_unit.startswith("EXP-"):
+        if not isinstance(run_unit, str) or not run_unit.startswith(("EXP-", "QUAL-")):
             raise QueueError(f"invalid AWS-A2 run_unit: {run_unit!r}")
-        if not isinstance(experiment_id, str) or not experiment_id.startswith("EXP-"):
+        if not isinstance(experiment_id, str) or not experiment_id.startswith(("EXP-", "QUAL-")):
             raise QueueError(f"invalid experiment_id: {experiment_id!r}")
         if run_unit in seen:
             raise QueueError(f"duplicate run unit: {run_unit}")
@@ -129,9 +129,13 @@ def validate_queue(config: dict[str, Any]) -> None:
                 raise QueueError(f"shell run unit {run_unit} must define a command list")
         else:
             raise QueueError(f"run unit {run_unit} has unsupported kind: {kind!r}")
-    actual = [item["run_unit"] for item in config.get("run_units", [])]
-    if actual != expected:
-        raise QueueError(f"AWS-A2 queue order must be {expected}; got {actual}")
+    expected = config["queue"].get("expected_run_units")
+    if expected is None and config["queue"].get("id") == "AWS-A2-PyTorch":
+        expected = DEFAULT_A2_PYTORCH_ORDER
+    if expected is not None:
+        actual = [item["run_unit"] for item in config.get("run_units", [])]
+        if actual != expected:
+            raise QueueError(f"AWS-A2 queue order must be {expected}; got {actual}")
 
 
 def render_plan(config: dict[str, Any]) -> dict[str, Any]:
@@ -194,18 +198,27 @@ def env_exports(config: dict[str, Any]) -> str:
     )
 
 
+def queue_log_name(queue_id: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", queue_id).strip("-").lower()
+    if not safe:
+        raise QueueError(f"queue id cannot be used as a log filename: {queue_id!r}")
+    return f"{safe}-queue.log"
+
+
 def host_script(config: dict[str, Any], launch_config: dict[str, Any], run_id: str) -> str:
     image = image_reference(config)
     queue = config["queue"]
     inputs = config["inputs"]
     artifacts = config["artifacts"]
     container = config["container"]
+    log_name = queue_log_name(queue["id"])
     script = textwrap.dedent(
         f"""\
         #!/usr/bin/env bash
         set -euo pipefail
 
-        exec > >(tee -a /var/log/aws-a2-queue.log) 2>&1
+        QUEUE_LOG_FILE="/var/log/{log_name}"
+        exec > >(tee -a "${{QUEUE_LOG_FILE}}") 2>&1
 
         QUEUE_ID="{queue['id']}"
         RUN_ID="{validate_run_id(run_id)}"
@@ -237,8 +250,8 @@ def host_script(config: dict[str, Any], launch_config: dict[str, Any], run_id: s
           set +e
           echo "AWS-A2 queue finishing with status ${{status}} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p "${{HOST_ARTIFACT_ROOT}}"
-          cp /var/log/aws-a2-queue.log "${{HOST_ARTIFACT_ROOT}}/AWS-A2-PyTorch-${{RUN_ID}}.log" 2>/dev/null || true
-          aws s3 cp "${{HOST_ARTIFACT_ROOT}}/AWS-A2-PyTorch-${{RUN_ID}}.log" \\
+          cp "${{QUEUE_LOG_FILE}}" "${{HOST_ARTIFACT_ROOT}}/${{QUEUE_ID}}-${{RUN_ID}}.log" 2>/dev/null || true
+          aws s3 cp "${{HOST_ARTIFACT_ROOT}}/${{QUEUE_ID}}-${{RUN_ID}}.log" \\
             "${{QUEUE_LOG_URI}}runs/${{RUN_ID}}/queue.log" \\
             --region "${{AWS_REGION}}" --only-show-errors || true
           if [[ "${{status}}" != "0" && "${{STOP_ON_FAILURE}}" != "true" ]]; then
@@ -521,8 +534,15 @@ def real_launch(
         wait_instance_running(launch_config, instance_id)
         attach_response = attach_cache_volume(launch_config, instance_id)
     except Exception as error:
-        run_aws_command(launch_config, "ec2", "stop-instances", "--instance-ids", instance_id)
-        raise QueueError(f"launch created {instance_id}, but bootstrap attachment failed; stop requested") from error
+        if bool(config["queue"].get("stop_on_failure", True)):
+            run_aws_command(launch_config, "ec2", "stop-instances", "--instance-ids", instance_id)
+            detail = "stop requested"
+        else:
+            detail = (
+                "left running for inspection because stop_on_failure=false; "
+                "the user-data safety shutdown should still apply"
+            )
+        raise QueueError(f"launch created {instance_id}, but bootstrap attachment failed; {detail}") from error
     return {"run_instances": launch_response, "cache_volume_attachment": attach_response}
 
 

@@ -168,12 +168,13 @@ The immediate AWS-A2 experiment queue is defined in
 `a2_experiment_queue.yaml`. It runs `EXP-01-A2`, `EXP-02-A2V1`,
 `EXP-02-A2V2`, `EXP-07-A2V1`, `EXP-07-A2V2`, `EXP-08-A2V2`,
 `EXP-09-A2V1`, and `EXP-09-A2V2` sequentially on one `g7e.12xlarge` host.
-The queue launch pins `us-west-2b`, attaches the retained cache volume
-`vol-055b18a2e1e5fdf79`, sets `InstanceInitiatedShutdownBehavior=stop`, stages
-pinned inputs from S3, and syncs artifacts after each run unit. A successful
-queue keeps a 15-minute post-queue inspection window before shutdown. A failed
-queue uploads its log and leaves the EC2 instance running for manual inspection;
-the hard 300-minute safety shutdown remains scheduled.
+The queue launch now allows AWS-selected default subnet placement because cache
+volumes exist in every default AZ. It sets
+`InstanceInitiatedShutdownBehavior=stop`, stages pinned inputs from S3, and
+syncs artifacts after each run unit. A successful queue keeps a 15-minute
+post-queue inspection window before shutdown. A failed queue uploads its log
+and leaves the EC2 instance running for manual inspection; the hard 300-minute
+safety shutdown remains scheduled.
 
 Print or launch the guarded A2 queue with:
 
@@ -201,12 +202,30 @@ Compute profile: AWS-A2
 Security group: sg-0797f3b8520d4efa9
 Instance profile: FinetuningGpuInstanceRole
 Root EBS: 120 GiB gp3, encrypted, delete-on-termination
-Active subnet/AZ: subnet-0d50d4374d2149a57 in us-west-2b
-Persistent cache EBS: vol-055b18a2e1e5fdf79 in us-west-2b
+Active subnet/AZ: AWS-selected default VPC subnet
+Persistent cache EBS: one retained 300 GiB gp3 volume per default AZ
 Queue shutdown behavior: stop
 IMDS: IMDSv2 required
 Image:
 037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch@sha256:8f7e455bc939e95bd795bbe569224cd2728903324324df7f60dcbffc9af38486
+```
+
+The AWS-A2-Megatron EXP-12 exception uses the same AWS-selected A2
+infrastructure, but pulls the NeMo/Megatron image:
+
+```text
+037678282394.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-nemo@sha256:ea7616a570d7e271eff25b4f3c0655a9910024e119171e2ead7569f6714b35fb
+```
+
+The queue is defined in `a2_megatron_queue.yaml`. It runs `QUAL-A2` inside the
+NeMo image before `EXP-12-A2V1` and `EXP-12-A2V2`, stages artifacts under
+`artifacts/QUAL-A2/`, `artifacts/EXP-12/`, and `artifacts/AWS-A2-Megatron/`,
+and uses the same 300-minute hard safety cap plus 15-minute success hold:
+
+```bash
+make aws-a2-megatron-queue-plan
+make aws-a2-megatron-queue-launch-dry-run RUN_ID=manual-a2-megatron-YYYYMMDD
+make aws-a2-megatron-queue-launch RUN_ID=manual-a2-megatron-YYYYMMDD CONFIRM='launch AWS-A2-Megatron AWS-A2 stop-after-300m'
 ```
 
 ### Persistent AWS cache volume
@@ -222,17 +241,18 @@ cache is a separate retained EBS volume:
 | Instance-store NVMe | 3.8 TiB on `g7e.12xlarge` | lost on terminate | Fast temporary run scratch and profiler data |
 | S3 | existing bucket | durable | Authoritative artifacts/results |
 
-The current retained cache volume exists in the AZ where the previous AWS-A1
-host launched:
+The current retained cache volumes cover all default AZs so EC2 can choose
+current `g7e.12xlarge` capacity:
 
 | Availability Zone | Volume ID | Status |
 | --- | --- | --- |
+| `us-west-2a` | `vol-0abbe95bb69bf8279` | Retained AWS cache volume |
 | `us-west-2b` | `vol-055b18a2e1e5fdf79` | Retained AWS cache volume |
+| `us-west-2c` | `vol-06690f4e18df73bf1` | Retained AWS cache volume |
+| `us-west-2d` | `vol-010580e5e0cb33ca2` | Retained AWS cache volume |
 
 EBS volumes are Availability-Zone scoped. EXP-01 now lets AWS select a default
-subnet/AZ only when matching cache volumes exist in every candidate AZ. After
-the extra AZ volumes were removed, the current A2 queue pins the `us-west-2b`
-subnet so the retained cache volume can attach.
+subnet/AZ only when matching cache volumes exist in every candidate AZ.
 
 After the volume exists, record its ID in `cache_volume.volume_id` in
 `exp01_qualification.yaml`. The launch wrapper checks that the volume is

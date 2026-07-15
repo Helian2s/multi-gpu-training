@@ -1,0 +1,167 @@
+schema_version: 1
+
+experiment:
+  id: EXP-13
+  slug: context_parallelism_long_sequences
+  title: Context parallelism for long sequences
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: nemo-megatron
+  image: ghcr.io/helian2s/multi-gpu-training-nemo@sha256:c2713c9027894f03d4da724cca04cc51256cec4bdc4b1f42b63578ff6133ac3b
+
+hardware:
+  compute_profile: RUNPOD-A100-SXM2
+  provider: runpod
+  location: selected-at-launch
+  resource_type: secure-cloud-pod
+  purchase_option: on-demand
+  gpu_type: NVIDIA A100-SXM4-80GB
+  gpu_architecture: Ampere SM 8.0
+  gpu_memory_gib: 80
+  physical_gpu_count: 2
+  visible_gpu_count: null
+  visible_devices: []
+  single_node: true
+  interconnect: nvlink_required
+
+qualification:
+  required: true
+  command: python common/qualification/runpod_gpu_smoke.py --execute --expected-devices 2
+
+workload:
+  shared_config: null
+  profile: benchmark
+  overrides:
+    model_family: synthetic_attention_block
+    framework: NeMo/Megatron Core runtime
+    training_mode: synthetic_full_backward_step
+    objective: context_parallel_activation_measurement
+    precision: bf16
+    restore_checkpoint_between_variants: false
+
+sweep:
+  baseline: EXP-13-RUNPOD-A2V1-cp1-seq1024
+  variants:
+    - id: EXP-13-RUNPOD-A2V1-cp1-seq1024
+      run_unit: EXP-13-RUNPOD-A2-Megatron-V1
+      visible_devices: [0]
+      world_size: 1
+      workload: context_parallel_benchmark
+      context_parallel_size: 1
+      activation_checkpointing: false
+      microbatch_size: 1
+      sequence_length: 1024
+      hidden_size: 512
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 4
+      view: cp1_short_context
+    - id: EXP-13-RUNPOD-A2V1-cp1-seq2048
+      run_unit: EXP-13-RUNPOD-A2-Megatron-V1
+      visible_devices: [0]
+      world_size: 1
+      workload: context_parallel_benchmark
+      context_parallel_size: 1
+      activation_checkpointing: false
+      microbatch_size: 1
+      sequence_length: 2048
+      hidden_size: 512
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 4
+      view: cp1_medium_context
+    - id: EXP-13-RUNPOD-A2V1-cp1-seq4096-checkpoint
+      run_unit: EXP-13-RUNPOD-A2-Megatron-V1
+      visible_devices: [0]
+      world_size: 1
+      workload: context_parallel_benchmark
+      context_parallel_size: 1
+      activation_checkpointing: true
+      microbatch_size: 1
+      sequence_length: 4096
+      hidden_size: 512
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 4
+      view: cp1_checkpoint_boundary
+    - id: EXP-13-RUNPOD-A2V2-cp2-seq2048
+      run_unit: EXP-13-RUNPOD-A2-Megatron-V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: context_parallel_benchmark
+      context_parallel_size: 2
+      activation_checkpointing: false
+      microbatch_size: 1
+      sequence_length: 2048
+      hidden_size: 512
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 4
+      view: cp2_medium_context
+    - id: EXP-13-RUNPOD-A2V2-cp2-seq4096
+      run_unit: EXP-13-RUNPOD-A2-Megatron-V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: context_parallel_benchmark
+      context_parallel_size: 2
+      activation_checkpointing: false
+      microbatch_size: 1
+      sequence_length: 4096
+      hidden_size: 512
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 4
+      view: cp2_long_context
+  fixed:
+    host_profile: RUNPOD-A100-SXM2
+    physical_gpu_count: 2
+    single_node: true
+    seeds: [1337]
+    precision: BF16
+    optimizer: AdamW with identical synthetic attention parameters per variant
+
+execution:
+  launcher: python experiments/exp_13_context_parallelism_long_sequences/run_exp13.py --execute
+  planning_command: python experiments/exp_13_context_parallelism_long_sequences/run_exp13.py --dry-run --allow-unpublished-image
+  environment:
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+    NCCL_DEBUG: INFO
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+  timeout_seconds: 5400
+
+measurements:
+  required:
+    - immutable GHCR image digest
+    - driver, CUDA, PyTorch, NCCL, NeMo, Megatron Core, and Megatron Bridge versions
+    - GPU visibility and topology
+    - CP=1 short and medium context step time and memory
+    - CP=1 checkpointed boundary case
+    - CP=2 medium and long context step time, memory, and estimated K/V exchange bytes
+    - per-rank peak allocated GPU memory
+  profilers: []
+  repetitions: 1
+
+correctness:
+  gates:
+    - mandatory Runpod A2 qualification passes
+    - NeMo/Megatron image imports Megatron Core modules
+    - CP world size matches visible GPU count
+    - every variant writes rank metrics and a manifest
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: runpod-network-volume:/artifacts/EXP-13/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 2.0
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: null
+  stop_conditions:
+    - qualification fails
+    - immutable Runpod NeMo image digest is missing
+    - Megatron Core modules are unavailable
+    - bounded run timeout is reached

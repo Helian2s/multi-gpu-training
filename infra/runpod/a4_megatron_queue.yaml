@@ -1,0 +1,65 @@
+schema_version: 1
+queue:
+  id: RUNPOD-A4-Megatron
+  description: Four-GPU Runpod queue for EXP-14 TP=2 x DP=2 hybrid measurements.
+  compute_profile: RUNPOD-A100-SXM4
+  container_queue_config: infra/runpod/a4_megatron_queue.yaml
+  expected_run_units:
+    - QUAL-RUNPOD-A4-Megatron
+    - EXP-14-RUNPOD-A4-Megatron
+  maximum_lifetime_minutes: 180
+  post_queue_inspection_minutes: 15
+  stop_on_success: true
+  stop_on_failure: false
+
+runpod:
+  cloud_type: SECURE
+  gpu_id: NVIDIA A100-SXM4-80GB
+  gpu_count: 4
+  min_cuda_version: "12.8"
+  data_center_ids: []
+  container_disk_gb: 120
+  pod_volume_gb: 50
+  network_volume_mount_path: /runpod-volume
+  network_volume_id: ""
+  ports:
+    - 22/tcp
+  registry_auth_id: cmrmgu74b005rha4eqqn8bsoo
+
+image:
+  registry: ghcr.io
+  repository: helian2s/multi-gpu-training-nemo
+  tag: runpod-cuda128-20260715-0900943-dirty
+  digest: sha256:c2713c9027894f03d4da724cca04cc51256cec4bdc4b1f42b63578ff6133ac3b
+
+artifacts:
+  network_volume_root: /runpod-volume/artifacts/runs
+
+container:
+  repo_root: /workspace/multi-gpu-training
+  environment:
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+    NCCL_DEBUG: INFO
+    NCCL_DEBUG_SUBSYS: INIT,COLL,GRAPH
+    TOKENIZERS_PARALLELISM: "false"
+    TORCH_DISTRIBUTED_DEBUG: DETAIL
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+
+run_units:
+  - run_unit: QUAL-RUNPOD-A4-Megatron
+    experiment_id: QUAL-RUNPOD-A4-Megatron
+    kind: shell
+    visible_devices: "0,1,2,3"
+    command:
+      - python
+      - common/qualification/runpod_gpu_smoke.py
+      - --execute
+      - --expected-devices
+      - "4"
+    timeout_seconds: 1200
+  - run_unit: EXP-14-RUNPOD-A4-Megatron
+    experiment_id: EXP-14
+    kind: runner
+    visible_devices: "0,1,2,3"
+    runner: experiments/exp_14_tp2_dp2_hybrid/run_exp14.py
+    timeout_seconds: 7200

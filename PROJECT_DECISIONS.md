@@ -44,11 +44,15 @@ a minimal piece is required to run or interpret an optimization experiment.
 
 1. **Supported cloud providers:** AWS EC2 and Runpod. AWS remains the
    PyTorch/Blackwell/PCIe provider for G7e work, and Runpod supplies the A100
-   SXM/NVLink environment for the Runpod PyTorch communication baseline and all
-   NeMo/Megatron experiments. AWS capacity failures do not cancel the AWS
+   SXM/NVLink environment for the Runpod communication baseline and
+   topology-sensitive NeMo/Megatron experiments. EXP-12 is an approved
+   AWS-A2-Megatron exception because pipeline scheduling does not hard-require
+   NVLink and the AWS PCIe environment is sufficient for the bubble/schedule
+   mechanics being tested. AWS capacity failures do not cancel the AWS
    queues; Runpod preparation may proceed in parallel while AWS launch
-   configurations, ECR images, S3 paths, and cache volumes remain available for
-   later retry. No measured run begins until the selected resource passes
+   configurations, ECR images, and S3 paths remain available for later retry.
+   AWS cache volumes can be recreated when another AWS launch is approved. No
+   measured run begins until the selected resource passes
    capacity, permission, price, and runtime qualification. VT1 video-transcoding
    accelerators are part of the AWS quota's name but are not CUDA GPUs and are
    not used by this project.
@@ -76,10 +80,12 @@ a minimal piece is required to run or interpret an optimization experiment.
    uses exact G7e profiles, with current EXP-02, EXP-07, EXP-08, and EXP-09
    AWS-A2 work batched on one physical `AWS-A2` host by changing visible GPU
    count.
-   Runpod uses an exact two-GPU A100 SXM Pod for NVLink/PyTorch readiness and
-   one-/two-rank NeMo/Megatron work, and an exact four-GPU Pod for the hybrid.
-   Reports record both visible GPUs and the complete billed resource. No
-   experiment may use more than four GPUs.
+   AWS-A2 is also admitted for the EXP-12 one-/two-visible-GPU Megatron
+   pipeline-schedule run. Runpod uses an exact two-GPU A100 SXM Pod for
+   NVLink/PyTorch readiness and the remaining one-/two-rank NeMo/Megatron
+   work, and an exact four-GPU Pod for the hybrid. Reports record both visible
+   GPUs and the complete billed resource. No experiment may use more than four
+   GPUs.
 6. **No full 5D experiment:** the project will study parallelism dimensions
    separately and in useful smaller combinations, but will not run a complete
    five-dimensional parallelism layout.
@@ -93,19 +99,22 @@ a minimal piece is required to run or interpret an optimization experiment.
    GPU host should run only qualification, staging that requires the target
    environment, profiling, or experiment work.
 9. **Runpod profiles and framework placement:** `RUNPOD-A100-SXM2` is one Secure
-   Cloud Pod with two `NVIDIA A100-SXM4-80GB` GPUs for Runpod PyTorch
-   topology/NCCL work and every one-/two-rank NeMo/Megatron experiment,
-   including TP/SP, PP, and CP. `RUNPOD-A100-SXM4` is a separate four-GPU Pod
-   used only for the NeMo/Megatron `TP=2 x DP=2` hybrid. The active Runpod
-   queue labels are `RUNPOD-A1-PyTorch` for one-visible-GPU PyTorch readiness
-   and smoke work, `RUNPOD-A2-PyTorch` for two-GPU A100 SXM readiness,
-   communication, and EXP-10, `RUNPOD-A2-Megatron` for all one- and
-   two-visible-GPU EXP-11 through EXP-13 NeMo/Megatron phases, and
-   `RUNPOD-A4-Megatron` for EXP-14. The Runpod `A` number is a queue-level GPU
-   count label, while the exact billed Pod resource and visible-device mask are
-   recorded separately in every run artifact. `RUNPOD-A2-Megatron` deliberately
-   contains both one-visible-GPU and two-visible-GPU phases. AWS remains the
-   PyTorch/Blackwell/PCIe environment.
+   Cloud Pod with two `NVIDIA A100-SXM4-80GB` GPUs for the Runpod NVLink/NCCL
+   communication baseline and the one-/two-rank NeMo/Megatron experiments whose
+   communication pattern benefits materially from NVLink, including TP/SP and
+   CP. The current two-GPU Runpod execution queue is `RUNPOD-A2-Megatron`,
+   using the NeMo/Megatron image for `QUAL-RUNPOD-A2-Megatron`, EXP-10,
+   EXP-11, and EXP-13 so one Pod can run the complete two-GPU Runpod phase.
+   EXP-10 remains a model-free CUDA/NCCL communication experiment; it runs in
+   the NeMo/Megatron image only to avoid changing images inside a single Pod
+   queue. `RUNPOD-A100-SXM4` is a separate four-GPU Pod used only by
+   `RUNPOD-A4-Megatron` for EXP-14. `AWS-A2-Megatron` is the approved AWS queue
+   for EXP-12. The Runpod `A` number is a queue-level GPU count label, while the
+   exact billed Pod resource and visible-device mask are recorded separately in
+   every run artifact. `RUNPOD-A2-Megatron` deliberately contains both
+   one-visible-GPU and two-visible-GPU phases for its assigned experiments. AWS
+   remains the PyTorch/Blackwell/PCIe environment and now also hosts the EXP-12
+   Megatron pipeline-schedule exception.
    Qualification must show NVLink between every selected pair; NVSwitch is
    recorded only if observed topology proves it.
 10. **One provider per experiment:** an experiment is assigned to AWS or
@@ -123,9 +132,11 @@ The only training frameworks used to implement experiments are:
 - NVIDIA NeMo Framework with Megatron Core, for NVIDIA's optimized LLM training
   stack and higher-level model-parallel experiments.
 
-All numbered NeMo/Megatron experiments run on the accepted Runpod A100 SXM
-profiles. This is an operational and topology choice, not permission to compare
-their performance directly with PyTorch experiments on AWS Blackwell hardware.
+Numbered NeMo/Megatron experiments normally run on the accepted Runpod A100 SXM
+profiles. EXP-12 is the approved exception and runs on AWS-A2 because pipeline
+schedule, bubble, and stage-balance behavior can be tested without NVLink. This
+is an operational and topology choice, not permission to compare NeMo/Megatron
+performance directly with PyTorch experiments on AWS Blackwell hardware.
 
 The Ultra-Scale Playbook may be used as a curriculum, conceptual reference, and
 source of hypotheses. Its Nanotron implementation will not be used. We will not
@@ -161,8 +172,10 @@ AWS-A1-PyTorch and AWS-A2-PyTorch work use the same AWS PyTorch runtime image
 when the software stack is identical. The EC2 profile, visible GPU count,
 qualification smoke, and measured workload are selected by provider
 configuration and run-unit arguments, not by baking separate A1/A2 images.
-Runpod PyTorch queues use the GHCR mirror of the same PyTorch image family
-when their software stack is identical. Create a new PyTorch image only when
+The current Runpod phase uses the GHCR mirror of the NeMo/Megatron image family
+for EXP-10, EXP-11, EXP-13, and EXP-14. The Runpod communication baseline uses
+CUDA/NCCL tools inside that image rather than a separate PyTorch Pod image, so
+the two-GPU Pod can run one sequential queue. Create a new image only when
 source, dependencies, profiler tooling, or runtime contracts change.
 
 Images are built once locally with Docker Buildx or by GitHub Actions and pushed
@@ -217,11 +230,12 @@ Project scope and exclusions remain authoritative in this file regardless of
 catalog status.
 
 Current canonical experiment IDs use the two-digit form `EXP-NN` and define the
-recommended provider-blocked order: EXP-01 through EXP-09 are the AWS phase;
-EXP-10 through EXP-14 are the Runpod phase. The active execution queues are
-`AWS-A1-PyTorch`, `AWS-A2-PyTorch`, `RUNPOD-A1-PyTorch`,
-`RUNPOD-A2-PyTorch`, `RUNPOD-A2-Megatron`, and `RUNPOD-A4-Megatron`; AWS
-queues stay eligible for retry while Runpod preparation proceeds. Three-digit
+recommended provider-blocked order: EXP-01 through EXP-09 are the AWS PyTorch
+phase; EXP-12 is the AWS-A2-Megatron exception; EXP-10, EXP-11, EXP-13, and
+EXP-14 are the Runpod phase. The active execution queues are
+`AWS-A1-PyTorch`, `AWS-A2-PyTorch`, `AWS-A2-Megatron`,
+`RUNPOD-A2-Megatron`, and `RUNPOD-A4-Megatron`; AWS queues stay eligible for retry while Runpod
+preparation proceeds. Three-digit
 experiment IDs appearing in the decision log are historical identifiers and are
 not current catalog IDs. Each provider phase begins with its model-free
 topology/P2P/NCCL experiment: EXP-01 on AWS and EXP-10 on Runpod.
@@ -237,11 +251,15 @@ or `EXP-NN-A4` require a new project decision before AWS four-GPU launch work
 resumes.
 
 Runpod execution planning uses framework-qualified queue labels
-`RUNPOD-A1-PyTorch`, `RUNPOD-A2-PyTorch`, `RUNPOD-A2-Megatron`, and
-`RUNPOD-A4-Megatron` plus exact Pod resource profiles. These labels organize
+`RUNPOD-A2-Megatron` and `RUNPOD-A4-Megatron` plus exact Pod resource profiles. These labels organize
 execution and artifacts; they are not canonical experiment IDs and do not
 replace the exact GPU type, billed GPU count, visible GPU count, datacenter,
 Pod ID, topology, image family, or image digest in run records.
+
+AWS NeMo/Megatron execution planning uses the framework-qualified
+`AWS-A2-Megatron` queue for EXP-12 only. It reuses the AWS-A2 G7e host profile,
+ECR, S3, and lifecycle guards while recording that the result is a PCIe
+pipeline-schedule measurement, not a Runpod NVLink result.
 
 For experiments that train a model, the accepted training mode is
 full-parameter continued pretraining with autoregressive next-token
@@ -1053,6 +1071,57 @@ timestamps were not captured; no earlier chronology is implied by their IDs.
   launch documentation include `EXP-08-A2V2`. Any failed queue retry may leave
   billable compute running until manual action or the hard safety shutdown, so
   monitoring and follow-up are required.
+
+### PD-030 — Move EXP-12 pipeline scheduling to AWS-A2-Megatron
+
+- **Recorded:** 2026-07-15
+- **Status:** Accepted
+- **Supersedes:** PD-016 and PD-027 only where they assigned EXP-12 pipeline
+  parallelism to Runpod A100 SXM. It preserves Runpod placement for EXP-10,
+  EXP-11, EXP-13, and EXP-14.
+- **Decision:** Run EXP-12 on AWS using a new `AWS-A2-Megatron` queue on the
+  existing AWS-A2 `g7e.12xlarge` profile. EXP-12 keeps the NeMo/Megatron image
+  family and uses one-visible-GPU PP=1 and two-visible-GPU PP=2 phases on the
+  same billed AWS-A2 host. The result must record PCIe topology explicitly and
+  must not be described as an NVLink measurement.
+- **Rationale:** EXP-12 studies pipeline bubble size, microbatch scheduling,
+  and stage balance. Unlike EXP-10, EXP-11, EXP-13, and EXP-14, its core
+  hypothesis does not require NVLink. AWS-A2 is already qualified operationally
+  for two-GPU single-node runs and can answer the pipeline-schedule mechanics
+  while Runpod remains blocked by registry/storage/API-key readiness.
+- **Consequences:** Add an `AWS-A2-Megatron` queue, scoped S3 artifact
+  permissions for `artifacts/EXP-12/` and `artifacts/AWS-A2-Megatron/`, an
+  EXP-12-capable NeMo image in ECR, and an EXP-12 implementation directory.
+  Runpod remains the required provider for EXP-10, EXP-11, EXP-13, and EXP-14
+  unless another explicit decision changes those placements.
+
+### PD-031 — Use one NeMo/Megatron image for the remaining Runpod phase
+
+- **Recorded:** 2026-07-15
+- **Status:** Accepted
+- **Supersedes:** PD-027 where it split Runpod EXP-10 communication readiness
+  into `RUNPOD-A1-PyTorch` and `RUNPOD-A2-PyTorch`. It preserves the
+  one-provider-per-experiment rule, Runpod placement for EXP-10, EXP-11,
+  EXP-13, and EXP-14, and the separate four-GPU EXP-14 queue.
+- **Decision:** Use the NeMo/Megatron image family for the complete remaining
+  Runpod phase. `RUNPOD-A2-Megatron` runs the two-GPU Pod queue containing
+  `QUAL-RUNPOD-A2-Megatron`, EXP-10, EXP-11 one-/two-visible-GPU phases, and
+  EXP-13 one-/two-visible-GPU phases. `RUNPOD-A4-Megatron` runs the separate
+  four-GPU Pod queue for EXP-14. EXP-10 remains a model-free CUDA/NCCL
+  communication experiment; the NeMo image must include the required NCCL tests
+  and `p2pBandwidthLatencyTest`.
+- **Rationale:** A Runpod Pod boots one container image. Using the same
+  NeMo/Megatron image for EXP-10, EXP-11, and EXP-13 allows one acquired
+  two-GPU A100 SXM Pod to run the complete two-GPU Runpod queue without nested
+  Docker or image switching. The NeMo container already includes NVIDIA's
+  optimized PyTorch and NCCL stack, so adding the CUDA P2P sample covers the
+  communication baseline without changing the measured provider or topology.
+- **Consequences:** The current Runpod blockers are now the NeMo GHCR digest,
+  a pull-only Runpod GHCR registry auth, a Runpod network volume for durable
+  artifacts, and explicit paid Pod approval. A separate Runpod PyTorch image is
+  not required for the current EXP-10 launch path, though the PyTorch image
+  family remains available for AWS and any future explicitly accepted Runpod
+  PyTorch work.
 
 ## Primary references
 

@@ -9,6 +9,11 @@ example `artifacts/EXP-03/runs/<run-id>/` in S3 becomes
 `artifacts/runs/aws-s3-mirror/EXP-03/runs/<run-id>/` locally. Do not keep a
 second direct copy under `artifacts/runs/EXP-NN/` for the same S3 data.
 
+Use `artifacts/runs/runpod-volume-mirror/` as the canonical local mirror for
+Runpod Pod-volume artifacts copied before Pod deletion. It is intentionally
+ignored by Git like the AWS mirror. Transfer this directory outside Git when a
+different workstation needs raw run logs, metrics, or profiler files.
+
 Use the following layout for every remote or local run:
 
 ```text

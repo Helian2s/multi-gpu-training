@@ -4,12 +4,17 @@ PREPARATION_BOOTSTRAP_PYTHON ?= python3.12
 IMAGE_PLATFORM ?= linux/amd64
 PYTORCH_IMAGE ?= multi-gpu-training-pytorch:local
 NEMO_IMAGE ?= multi-gpu-training-nemo:local
+NEMO_BASE_IMAGE ?= nvcr.io/nvidia/nemo:26.06@sha256:bb1dbe94646d5a6490570823cafa0d6f753e1cb60df8f5e89e3b32f3f87893fc
+CUDA_SAMPLES_ARCHITECTURES ?= 80
 VCS_REF ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 AWS_EXP01_CONFIG ?= infra/aws/exp01_qualification.yaml
 AWS_A1_CONFIG ?= infra/aws/a1_qualification.yaml
 AWS_A1_QUEUE_CONFIG ?= infra/aws/a1_experiment_queue.yaml
 AWS_A2_QUEUE_CONFIG ?= infra/aws/a2_experiment_queue.yaml
+AWS_A2_MEGATRON_QUEUE_CONFIG ?= infra/aws/a2_megatron_queue.yaml
+RUNPOD_A2_MEGATRON_QUEUE_CONFIG ?= infra/runpod/a2_megatron_queue.yaml
+RUNPOD_A4_MEGATRON_QUEUE_CONFIG ?= infra/runpod/a4_megatron_queue.yaml
 AWS_EXP01_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
 AWS_EXP01_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 AWS_EXP01_HOLD_ARG = $(if $(HOLD_OPEN_ON_EXIT),--hold-open-on-exit,)
@@ -21,8 +26,13 @@ AWS_A1_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 AWS_A2_QUEUE_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
 AWS_A2_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 AWS_A2_QUEUE_CONFIRM_ARG = $(if $(CONFIRM),--confirm "$(CONFIRM)",)
+AWS_A2_MEGATRON_QUEUE_INSTANCE_ARG = $(if $(INSTANCE_ID),--instance-id $(INSTANCE_ID),)
+AWS_A2_MEGATRON_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
+AWS_A2_MEGATRON_QUEUE_CONFIRM_ARG = $(if $(CONFIRM),--confirm "$(CONFIRM)",)
+RUNPOD_A2_MEGATRON_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
+RUNPOD_A4_MEGATRON_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 
-.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a1-dry-run exp-a2-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts aws-a1-preflight aws-a1-launch-dry-run aws-a1-status aws-a1-host-shell aws-a1-container-shell aws-a1-host-command aws-a1-container-command aws-a1-logs aws-a1-monitor aws-a1-artifacts aws-a1-queue-plan aws-a1-queue-script aws-a1-queue-run aws-a2-queue-plan aws-a2-queue-script aws-a2-queue-launch-dry-run aws-a2-queue-launch aws-a2-queue-run
+.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a1-dry-run exp-a2-dry-run exp-a2-megatron-dry-run exp-runpod-megatron-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts aws-a1-preflight aws-a1-launch-dry-run aws-a1-status aws-a1-host-shell aws-a1-container-shell aws-a1-host-command aws-a1-container-command aws-a1-logs aws-a1-monitor aws-a1-artifacts aws-a1-queue-plan aws-a1-queue-script aws-a1-queue-run aws-a2-queue-plan aws-a2-queue-script aws-a2-queue-launch-dry-run aws-a2-queue-launch aws-a2-queue-run aws-a2-megatron-queue-plan aws-a2-megatron-queue-script aws-a2-megatron-queue-launch-dry-run aws-a2-megatron-queue-launch aws-a2-megatron-queue-run runpod-a2-megatron-queue-plan runpod-a2-megatron-queue-script runpod-a2-megatron-pod-create-command runpod-a4-megatron-queue-plan runpod-a4-megatron-queue-script runpod-a4-megatron-pod-create-command
 
 help:
 	@echo "make check"
@@ -47,6 +57,17 @@ help:
 	@echo "make aws-a2-queue-launch-dry-run [RUN_ID=...]"
 	@echo "make aws-a2-queue-launch RUN_ID=... CONFIRM='launch AWS-A2-PyTorch AWS-A2 stop-after-300m'"
 	@echo "make aws-a2-queue-run INSTANCE_ID=i-... [RUN_ID=...]"
+	@echo "make aws-a2-megatron-queue-plan"
+	@echo "make aws-a2-megatron-queue-script [RUN_ID=...]"
+	@echo "make aws-a2-megatron-queue-launch-dry-run [RUN_ID=...]"
+	@echo "make aws-a2-megatron-queue-launch RUN_ID=... CONFIRM='launch AWS-A2-Megatron AWS-A2 stop-after-300m'"
+	@echo "make aws-a2-megatron-queue-run INSTANCE_ID=i-... [RUN_ID=...]"
+	@echo "make runpod-a2-megatron-queue-plan"
+	@echo "make runpod-a2-megatron-queue-script [RUN_ID=...]"
+	@echo "make runpod-a2-megatron-pod-create-command RUN_ID=..."
+	@echo "make runpod-a4-megatron-queue-plan"
+	@echo "make runpod-a4-megatron-queue-script [RUN_ID=...]"
+	@echo "make runpod-a4-megatron-pod-create-command RUN_ID=..."
 	@echo "make aws-exp01-preflight"
 	@echo "make aws-exp01-launch-dry-run [RUN_ID=...] [HOLD_OPEN_ON_EXIT=1]"
 	@echo "make aws-exp01-status"
@@ -63,9 +84,11 @@ help:
 	@echo "make verify-inputs"
 	@echo "make exp-a1-dry-run"
 	@echo "make exp-a2-dry-run"
+	@echo "make exp-a2-megatron-dry-run"
+	@echo "make exp-runpod-megatron-dry-run"
 
 check:
-	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py infra/aws/a1_queue.py infra/aws/a2_queue.py common/experiment_runner.py common/pytorch_executor.py experiments/_template/analyze.py experiments/exp_*/analyze.py experiments/exp_*/run_exp*.py
+	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py infra/aws/a1_queue.py infra/aws/a2_queue.py infra/runpod/runpod_queue.py common/experiment_runner.py common/pytorch_executor.py common/megatron_executor.py common/qualification/aws_gpu_smoke.py common/qualification/runpod_gpu_smoke.py experiments/_template/analyze.py experiments/exp_*/analyze.py experiments/exp_*/run_exp*.py
 	$(PYTHON) scripts/new_experiment.py --help
 	$(PYTHON) -m unittest discover -s tests
 	$(PYTHON) scripts/validate_repo.py
@@ -101,6 +124,14 @@ exp-a2-dry-run:
 	$(PYTHON) experiments/exp_08_fsdp_sharding_zero_memory_tradeoffs/run_exp08.py --dry-run
 	$(PYTHON) experiments/exp_09_controlled_troubleshooting_failure_diagnosis/run_exp09.py --dry-run
 
+exp-a2-megatron-dry-run:
+	$(PYTHON) experiments/exp_12_pipeline_schedules_bubble_size/run_exp12.py --dry-run --allow-unpublished-image
+
+exp-runpod-megatron-dry-run:
+	$(PYTHON) experiments/exp_11_tensor_sequence_parallelism/run_exp11.py --dry-run --allow-unpublished-image
+	$(PYTHON) experiments/exp_13_context_parallelism_long_sequences/run_exp13.py --dry-run --allow-unpublished-image
+	$(PYTHON) experiments/exp_14_tp2_dp2_hybrid/run_exp14.py --dry-run --allow-unpublished-image
+
 build-pytorch-image:
 	docker buildx build --platform "$(IMAGE_PLATFORM)" --load \
 		--build-arg VCS_REF="$(VCS_REF)" \
@@ -112,6 +143,8 @@ build-nemo-image:
 	docker buildx build --platform "$(IMAGE_PLATFORM)" --load \
 		--build-arg VCS_REF="$(VCS_REF)" \
 		--build-arg BUILD_DATE="$(BUILD_DATE)" \
+		--build-arg NEMO_BASE_IMAGE="$(NEMO_BASE_IMAGE)" \
+		--build-arg CUDA_SAMPLES_ARCHITECTURES="$(CUDA_SAMPLES_ARCHITECTURES)" \
 		-f containers/nemo/Dockerfile \
 		-t "$(NEMO_IMAGE)" .
 
@@ -183,6 +216,44 @@ aws-a2-queue-launch:
 aws-a2-queue-run:
 	@test -n "$(INSTANCE_ID)" || (echo "INSTANCE_ID is required, for example INSTANCE_ID=i-..."; exit 2)
 	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_QUEUE_CONFIG)" $(AWS_A2_QUEUE_INSTANCE_ARG) $(AWS_A2_QUEUE_RUN_ARG) run
+
+aws-a2-megatron-queue-plan:
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_MEGATRON_QUEUE_CONFIG)" plan
+
+aws-a2-megatron-queue-script:
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_MEGATRON_QUEUE_CONFIG)" $(AWS_A2_MEGATRON_QUEUE_RUN_ARG) host-script
+
+aws-a2-megatron-queue-launch-dry-run:
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_MEGATRON_QUEUE_CONFIG)" $(AWS_A2_MEGATRON_QUEUE_RUN_ARG) launch-dry-run
+
+aws-a2-megatron-queue-launch:
+	@test -n "$(RUN_ID)" || (echo "RUN_ID is required, for example RUN_ID=aws-a2-megatron-$$(date -u +%Y%m%dT%H%M%SZ)"; exit 2)
+	@test -n "$(CONFIRM)" || (echo "CONFIRM is required: launch AWS-A2-Megatron AWS-A2 stop-after-300m"; exit 2)
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_MEGATRON_QUEUE_CONFIG)" $(AWS_A2_MEGATRON_QUEUE_RUN_ARG) launch $(AWS_A2_MEGATRON_QUEUE_CONFIRM_ARG)
+
+aws-a2-megatron-queue-run:
+	@test -n "$(INSTANCE_ID)" || (echo "INSTANCE_ID is required, for example INSTANCE_ID=i-..."; exit 2)
+	$(PYTHON) infra/aws/a2_queue.py --queue-config "$(AWS_A2_MEGATRON_QUEUE_CONFIG)" $(AWS_A2_MEGATRON_QUEUE_INSTANCE_ARG) $(AWS_A2_MEGATRON_QUEUE_RUN_ARG) run
+
+runpod-a2-megatron-queue-plan:
+	$(PYTHON) infra/runpod/runpod_queue.py --queue-config "$(RUNPOD_A2_MEGATRON_QUEUE_CONFIG)" plan
+
+runpod-a2-megatron-queue-script:
+	$(PYTHON) infra/runpod/runpod_queue.py --queue-config "$(RUNPOD_A2_MEGATRON_QUEUE_CONFIG)" $(RUNPOD_A2_MEGATRON_QUEUE_RUN_ARG) container-script
+
+runpod-a2-megatron-pod-create-command:
+	@test -n "$(RUN_ID)" || (echo "RUN_ID is required, for example RUN_ID=runpod-a2-megatron-$$(date -u +%Y%m%dT%H%M%SZ)"; exit 2)
+	$(PYTHON) infra/runpod/runpod_queue.py --queue-config "$(RUNPOD_A2_MEGATRON_QUEUE_CONFIG)" $(RUNPOD_A2_MEGATRON_QUEUE_RUN_ARG) pod-create-command
+
+runpod-a4-megatron-queue-plan:
+	$(PYTHON) infra/runpod/runpod_queue.py --queue-config "$(RUNPOD_A4_MEGATRON_QUEUE_CONFIG)" plan
+
+runpod-a4-megatron-queue-script:
+	$(PYTHON) infra/runpod/runpod_queue.py --queue-config "$(RUNPOD_A4_MEGATRON_QUEUE_CONFIG)" $(RUNPOD_A4_MEGATRON_QUEUE_RUN_ARG) container-script
+
+runpod-a4-megatron-pod-create-command:
+	@test -n "$(RUN_ID)" || (echo "RUN_ID is required, for example RUN_ID=runpod-a4-megatron-$$(date -u +%Y%m%dT%H%M%SZ)"; exit 2)
+	$(PYTHON) infra/runpod/runpod_queue.py --queue-config "$(RUNPOD_A4_MEGATRON_QUEUE_CONFIG)" $(RUNPOD_A4_MEGATRON_QUEUE_RUN_ARG) pod-create-command
 
 aws-exp01-status:
 	$(PYTHON) infra/aws/exp01_ops.py --config "$(AWS_EXP01_CONFIG)" status

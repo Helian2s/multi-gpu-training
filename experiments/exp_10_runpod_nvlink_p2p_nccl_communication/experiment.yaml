@@ -1,0 +1,96 @@
+schema_version: 1
+
+experiment:
+  id: EXP-10
+  slug: runpod_nvlink_p2p_nccl_communication
+  title: Runpod NVLink P2P and NCCL communication
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: nemo-megatron
+  image: ghcr.io/helian2s/multi-gpu-training-nemo@sha256:c2713c9027894f03d4da724cca04cc51256cec4bdc4b1f42b63578ff6133ac3b
+
+hardware:
+  compute_profile: RUNPOD-A100-SXM2
+  provider: runpod
+  location: selected-at-launch
+  resource_type: secure-cloud-pod
+  purchase_option: on-demand
+  gpu_type: NVIDIA A100-SXM4-80GB
+  gpu_architecture: Ampere SM 8.0
+  gpu_memory_gib: 80
+  physical_gpu_count: 2
+  visible_gpu_count: 2
+  visible_devices: [0, 1]
+  single_node: true
+  interconnect: nvlink_required
+
+qualification:
+  required: true
+  command: python common/qualification/runpod_gpu_smoke.py --execute --expected-devices 2
+
+workload:
+  shared_config: null
+  profile: communication
+  overrides:
+    framework: CUDA/NCCL tools inside the NeMo/Megatron runtime image
+
+sweep:
+  baseline: default_nccl_environment
+  variants:
+    - topology_inventory
+    - cuda_p2p_bandwidth_latency
+    - nccl_all_reduce
+    - nccl_reduce_scatter
+    - nccl_all_gather
+    - nccl_broadcast
+    - nccl_all_to_all
+  fixed:
+    visible_gpus: [0, 1]
+    nccl_min_bytes: 8
+    nccl_max_bytes: 1073741824
+    nccl_step_factor: 2
+    nccl_warmup_iterations: 20
+    nccl_iterations: 100
+    nccl_check_iterations: 1
+
+execution:
+  launcher: bash experiments/exp_10_runpod_nvlink_p2p_nccl_communication/collect_exp10.sh
+  environment:
+    CUDA_VISIBLE_DEVICES: "0,1"
+    NCCL_DEBUG: INFO
+    NCCL_DEBUG_SUBSYS: INIT,COLL,GRAPH
+  timeout_seconds: 5400
+
+measurements:
+  required:
+    - nvidia-smi inventory
+    - nvidia-smi topology matrix
+    - CUDA peer-to-peer bandwidth and latency
+    - NCCL collective algorithm and bus bandwidth
+    - NCCL collective latency by message size
+    - NCCL debug output
+    - NVLink counters when accessible
+  profilers: []
+  repetitions: 1
+
+correctness:
+  gates:
+    - exactly two visible NVIDIA A100 SXM GPUs
+    - topology output shows NVLink between the selected pair
+    - p2pBandwidthLatencyTest exits successfully
+    - every required nccl-tests command exits successfully
+    - immutable GHCR image digest and Runpod Pod metadata are recorded
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: runpod-network-volume:/artifacts/EXP-10/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 3.0
+  maximum_instance_hours: 1.5
+  maximum_provider_cost: null
+  stop_conditions: []

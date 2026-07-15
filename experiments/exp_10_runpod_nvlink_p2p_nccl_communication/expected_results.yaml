@@ -1,0 +1,29 @@
+schema_version: 1
+experiment_id: EXP-10
+
+correctness_gates:
+  - id: two_visible_a100_sxm
+    requirement: Exactly two visible GPUs are NVIDIA A100-SXM4-80GB devices.
+  - id: topology_recorded
+    requirement: nvidia-smi topology output is present and identifies the selected GPU pair.
+  - id: p2p_success
+    requirement: p2pBandwidthLatencyTest exits successfully.
+  - id: nccl_success
+    requirement: all_reduce, reduce_scatter, all_gather, broadcast, and all_to_all tests exit successfully.
+
+hypotheses:
+  - id: H1
+    metric: nccl_bus_bandwidth_and_p2p_bandwidth
+    baseline: observed_runpod_a100_sxm_topology
+    comparison: message_size_sweep
+    expected_direction: bounded
+    threshold: topology_p2p_nccl_evidence_agree
+    rationale: NVLink-capable A100 SXM pairs should expose a GPU-direct communication regime.
+    confirm_when: Topology, p2pBandwidthLatencyTest, and NCCL debug output agree on GPU-direct communication.
+    reject_when: The selected pair lacks NVLink or NCCL uses an unexpected non-GPU-direct path.
+    inconclusive_when: Required topology, P2P, or NCCL artifacts are missing.
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - The run uses a different GPU type, visible pair, image digest, or NCCL environment than declared.

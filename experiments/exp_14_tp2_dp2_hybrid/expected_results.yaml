@@ -1,0 +1,27 @@
+schema_version: 1
+experiment_id: EXP-14
+
+correctness_gates:
+  - id: finite_loss
+    requirement: Every measured variant completes forward, backward, and optimizer steps on every rank.
+  - id: rank_maps
+    requirement: The DP=4, TP=4, and TP=2 x DP=2 variants record the expected process groups.
+  - id: rank_metrics
+    requirement: Every rank writes a metrics JSON file and the run manifest is completed.
+
+hypotheses:
+  - id: H1
+    metric: peak_allocated_bytes_tokens_per_second_and_estimated_collective_bytes
+    baseline: EXP-14-RUNPOD-A4-dp4
+    comparison: EXP-14-RUNPOD-A4-tp4 and EXP-14-RUNPOD-A4-tp2-dp2
+    expected_direction: bounded
+    threshold: The hybrid records both TP and DP groups and exposes both communication paths.
+    rationale: TP=2 x DP=2 is the smallest non-trivial combined process-group layout.
+    confirm_when: The hybrid rank map is correct and its metrics differ from both pure DP and pure TP.
+    reject_when: The hybrid does not create both non-trivial TP and DP groups.
+    inconclusive_when: Four-rank qualification, rank metrics, or topology data are missing.
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - Compared runs use different immutable images or uncontrolled hardware topology.

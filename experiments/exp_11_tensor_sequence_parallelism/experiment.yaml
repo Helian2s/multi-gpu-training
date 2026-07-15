@@ -1,0 +1,142 @@
+schema_version: 1
+
+experiment:
+  id: EXP-11
+  slug: tensor_sequence_parallelism
+  title: Tensor plus sequence parallelism
+  status: design
+  catalog: ../../EXPERIMENT_CATALOG.md
+
+stack:
+  family: nemo-megatron
+  image: ghcr.io/helian2s/multi-gpu-training-nemo@sha256:c2713c9027894f03d4da724cca04cc51256cec4bdc4b1f42b63578ff6133ac3b
+
+hardware:
+  compute_profile: RUNPOD-A100-SXM2
+  provider: runpod
+  location: selected-at-launch
+  resource_type: secure-cloud-pod
+  purchase_option: on-demand
+  gpu_type: NVIDIA A100-SXM4-80GB
+  gpu_architecture: Ampere SM 8.0
+  gpu_memory_gib: 80
+  physical_gpu_count: 2
+  visible_gpu_count: null
+  visible_devices: []
+  single_node: true
+  interconnect: nvlink_required
+
+qualification:
+  required: true
+  command: python common/qualification/runpod_gpu_smoke.py --execute --expected-devices 2
+
+workload:
+  shared_config: null
+  profile: benchmark
+  overrides:
+    model_family: synthetic_transformer_mlp
+    framework: NeMo/Megatron Core runtime
+    training_mode: synthetic_full_backward_step
+    objective: tensor_and_sequence_parallel_measurement
+    precision: bf16
+    restore_checkpoint_between_variants: false
+
+sweep:
+  baseline: EXP-11-RUNPOD-A2V1-tp1-sp-off
+  variants:
+    - id: EXP-11-RUNPOD-A2V1-tp1-sp-off
+      run_unit: EXP-11-RUNPOD-A2-Megatron-V1
+      visible_devices: [0]
+      world_size: 1
+      workload: tensor_sequence_parallel_benchmark
+      tensor_parallel_size: 1
+      sequence_parallel: false
+      microbatch_size: 1
+      sequence_length: 1024
+      hidden_size: 1024
+      mlp_expansion: 4
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: tp1_baseline
+    - id: EXP-11-RUNPOD-A2V2-tp2-sp-off
+      run_unit: EXP-11-RUNPOD-A2-Megatron-V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: tensor_sequence_parallel_benchmark
+      tensor_parallel_size: 2
+      sequence_parallel: false
+      microbatch_size: 1
+      sequence_length: 1024
+      hidden_size: 1024
+      mlp_expansion: 4
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: tp2_without_sequence_parallel
+    - id: EXP-11-RUNPOD-A2V2-tp2-sp-on
+      run_unit: EXP-11-RUNPOD-A2-Megatron-V2
+      visible_devices: [0, 1]
+      world_size: 2
+      workload: tensor_sequence_parallel_benchmark
+      tensor_parallel_size: 2
+      sequence_parallel: true
+      microbatch_size: 1
+      sequence_length: 1024
+      hidden_size: 1024
+      mlp_expansion: 4
+      precision: bf16
+      warmup_steps: 1
+      measured_steps: 6
+      view: tp2_with_sequence_parallel
+  fixed:
+    host_profile: RUNPOD-A100-SXM2
+    physical_gpu_count: 2
+    single_node: true
+    seeds: [1337]
+    precision: BF16
+    optimizer: AdamW with identical synthetic shard parameters per variant
+
+execution:
+  launcher: python experiments/exp_11_tensor_sequence_parallelism/run_exp11.py --execute
+  planning_command: python experiments/exp_11_tensor_sequence_parallelism/run_exp11.py --dry-run --allow-unpublished-image
+  environment:
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+    NCCL_DEBUG: INFO
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+  timeout_seconds: 5400
+
+measurements:
+  required:
+    - immutable GHCR image digest
+    - driver, CUDA, PyTorch, NCCL, NeMo, Megatron Core, and Megatron Bridge versions
+    - GPU visibility and topology
+    - TP=1 baseline step time and memory
+    - TP=2 step time, memory, and estimated collective bytes
+    - TP=2 sequence-parallel step time and memory
+    - per-rank peak allocated GPU memory
+  profilers: []
+  repetitions: 1
+
+correctness:
+  gates:
+    - mandatory Runpod A2 qualification passes
+    - NeMo/Megatron image imports Megatron Core modules
+    - TP world size matches visible GPU count
+    - every variant writes rank metrics and a manifest
+
+outputs:
+  root: ../../artifacts/runs
+  durable_uri: runpod-network-volume:/artifacts/EXP-11/
+  preserve_raw: true
+  preserve_profiles: true
+
+budget:
+  maximum_active_gpu_hours: 4.0
+  maximum_instance_hours: 2.0
+  maximum_provider_cost: null
+  stop_conditions:
+    - qualification fails
+    - immutable Runpod NeMo image digest is missing
+    - Megatron Core modules are unavailable
+    - bounded run timeout is reached

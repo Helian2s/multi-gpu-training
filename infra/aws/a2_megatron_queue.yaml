@@ -1,0 +1,75 @@
+schema_version: 1
+queue:
+  id: AWS-A2-Megatron
+  description: Sequential two-GPU AWS-A2 queue for EXP-12 pipeline-schedule measurements.
+  compute_profile: AWS-A2
+  qualification_config: infra/aws/exp01_qualification.yaml
+  expected_run_units:
+    - QUAL-A2
+    - EXP-12-A2V1
+    - EXP-12-A2V2
+  maximum_lifetime_minutes: 300
+  post_queue_inspection_minutes: 15
+  stop_on_success: true
+  stop_on_failure: false
+
+aws:
+  profile: finetuning-local
+  account_id: "037678282394"
+  region: us-west-2
+
+image:
+  registry: 037678282394.dkr.ecr.us-west-2.amazonaws.com
+  repository: multi-gpu-training-nemo
+  tag: aws-exp12-20260715-0338-0900943-dirty
+  digest: sha256:ea7616a570d7e271eff25b4f3c0655a9910024e119171e2ead7569f6714b35fb
+
+inputs:
+  durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/inputs/qwen3-wikitext-v1/
+  host_data_dir: /mnt/aws-cache/inputs/qwen3-wikitext-v1/data
+  container_data_dir: /workspace/multi-gpu-training/data
+  required_manifest: processed/Qwen--Qwen3-1.7B-Base--ea980cb0a6c2__Salesforce--wikitext--b08601e04326__wikitext-103-raw-v1__qwen3-wikitext-v1/manifest.json
+
+artifacts:
+  host_root: /opt/multi-gpu-training/artifacts/runs
+  container_root: /workspace/multi-gpu-training/artifacts/runs
+  queue_log_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/AWS-A2-Megatron/
+
+container:
+  name_prefix: aws-a2-megatron
+  shm_size: 32g
+  environment:
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+    NCCL_DEBUG: INFO
+    NCCL_DEBUG_SUBSYS: INIT,COLL,GRAPH
+    TOKENIZERS_PARALLELISM: "false"
+    TORCH_DISTRIBUTED_DEBUG: DETAIL
+    TORCH_NCCL_ASYNC_ERROR_HANDLING: "1"
+
+run_units:
+  - run_unit: QUAL-A2
+    experiment_id: QUAL-A2
+    kind: shell
+    visible_devices: "0,1"
+    command:
+      - python
+      - common/qualification/aws_gpu_smoke.py
+      - --execute
+      - --expected-devices
+      - "2"
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/QUAL-A2/
+    timeout_seconds: 1200
+  - run_unit: EXP-12-A2V1
+    experiment_id: EXP-12
+    kind: runner
+    visible_devices: "0"
+    runner: experiments/exp_12_pipeline_schedules_bubble_size/run_exp12.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-12/
+    timeout_seconds: 3600
+  - run_unit: EXP-12-A2V2
+    experiment_id: EXP-12
+    kind: runner
+    visible_devices: "0,1"
+    runner: experiments/exp_12_pipeline_schedules_bubble_size/run_exp12.py
+    durable_uri: s3://finetuning-lab-1-037678282394-us-west-2-an/artifacts/EXP-12/
+    timeout_seconds: 5400

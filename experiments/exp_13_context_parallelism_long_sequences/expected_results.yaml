@@ -1,0 +1,25 @@
+schema_version: 1
+experiment_id: EXP-13
+
+correctness_gates:
+  - id: finite_loss
+    requirement: Every measured variant completes forward, backward, and optimizer steps on every rank.
+  - id: rank_metrics
+    requirement: Every rank writes a metrics JSON file and the run manifest is completed.
+
+hypotheses:
+  - id: H1
+    metric: local_sequence_length_peak_allocated_bytes_and_estimated_collective_bytes
+    baseline: CP=1 at the same sequence length where available
+    comparison: CP=2 at the same sequence length
+    expected_direction: bounded
+    threshold: CP=2 halves local sequence length and reports non-zero K/V exchange bytes.
+    rationale: Context parallelism partitions sequence activations but exchanges K/V state.
+    confirm_when: CP=2 reduces local sequence length and memory pressure for long contexts while recording communication.
+    reject_when: CP=2 does not reduce local sequence length or cannot complete the long-context case.
+    inconclusive_when: Rank metrics, topology, or memory data are missing.
+
+invalid_if:
+  - Mandatory qualification fails or is missing.
+  - A correctness gate fails.
+  - Compared runs use different immutable images or uncontrolled hardware topology.

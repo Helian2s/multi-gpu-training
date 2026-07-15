@@ -267,6 +267,7 @@ pytorch_model*.bin
 artifacts/runs/
 artifacts/**
 !artifacts/README.md
+infra/runpod/*.local.yaml
 *.nsys-rep
 *.ncu-rep
 *.qdrep
