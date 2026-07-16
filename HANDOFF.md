@@ -1,6 +1,6 @@
 # Current workstation handoff
 
-Prepared: 2026-07-15
+Prepared: 2026-07-16
 
 From: Ubuntu x86_64 workstation
 
@@ -101,6 +101,10 @@ The pinned model, raw dataset, and processed token streams remain ignored under
 - AWS read-only cleanup checks previously found no active/stopped project EC2
   instances, no project-tagged EBS volumes, and no unattached available EBS
   volumes in `us-west-2`.
+- AWS ECR repositories `multi-gpu-training-pytorch` and
+  `multi-gpu-training-nemo` still exist in `us-west-2`, but an approved cleanup
+  deleted all images on 2026-07-16. Future AWS launches must rebuild and
+  republish the required image before use.
 - Provider credentials, API keys, SSH keys, Docker registry sessions, and local
   cloud config are not in Git and must be configured separately on the next
   workstation.
@@ -116,3 +120,5 @@ The pinned model, raw dataset, and processed token streams remain ignored under
    EXP-13, then promote them to final validated reports when ready.
 5. Publish a refreshed Runpod NeMo image that includes the committed NCCL
    cleanup fix before any future rerun.
+6. Rebuild and publish fresh AWS ECR images before any future AWS experiment
+   launch.
