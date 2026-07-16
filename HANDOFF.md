@@ -28,13 +28,18 @@ handoff instead of accumulating a historical log here.
 ## Current project state
 
 - AWS EXP-01 through EXP-09 have raw execution artifacts in S3 and a local
-  ignored mirror. Reports and completed lifecycle status remain pending.
+  ignored mirror. Interim RAG-oriented reports now summarize the measured
+  artifacts; final validation and completed lifecycle status remain pending.
 - AWS EXP-12 is completed and reported.
 - Runpod EXP-10, EXP-11, and EXP-13 have raw execution artifacts from
-  `runpod-a2-megatron-20260715T203057Z`; reports and completed lifecycle status
-  remain pending.
+  `runpod-a2-megatron-20260715T203057Z`; interim RAG-oriented reports now
+  summarize the measured artifacts; final validation and completed lifecycle
+  status remain pending.
 - Runpod EXP-14 is completed and reported from
   `runpod-a4-megatron-20260715T212017Z`.
+- RAG-friendly experiment history files are tracked under
+  `docs/experiment_history/`. They can be regenerated after restoring the raw
+  artifact mirrors with `make experiment-history`.
 - The CUDA 12.8 Runpod NeMo image used for EXP-10/11/13/14 is published to
   GHCR at digest
   `sha256:c2713c9027894f03d4da724cca04cc51256cec4bdc4b1f42b63578ff6133ac3b`.
@@ -61,6 +66,28 @@ trace JSON. The same AWS artifacts also remain durable in S3 under the
 `artifacts/` prefixes recorded in `infra/TOOLING.md`; Runpod artifacts were
 copied from Pod volumes into the local mirror before Pod deletion.
 
+The current compressed transfer archive on this Ubuntu workstation is:
+
+```text
+/home/val/Documents/py-projects/multi-gpu-training-artifacts-20260715T214405Z.tar.zst
+/home/val/Documents/py-projects/multi-gpu-training-artifacts-20260715T214405Z.tar.zst.sha256
+```
+
+SHA256:
+`be457ed5f8b9d959316456ad2a32257f05b2ff71c82e6a17d98a0bac31c2af8f`
+
+It contains the top-level `artifacts/` directory and verified byte-for-byte
+against the current local mirror at the time it was created. To restore it
+after cloning on another workstation:
+
+```bash
+sha256sum -c multi-gpu-training-artifacts-20260715T214405Z.tar.zst.sha256
+tar --zstd -xf multi-gpu-training-artifacts-20260715T214405Z.tar.zst -C /path/to/multi-gpu-training
+cd /path/to/multi-gpu-training
+make check
+make experiment-history
+```
+
 The pinned model, raw dataset, and processed token streams remain ignored under
 `data/raw/` and `data/processed/`. They are also staged in S3 under
 `inputs/qwen3-wikitext-v1/` for AWS queues.
@@ -83,7 +110,9 @@ The pinned model, raw dataset, and processed token streams remain ignored under
 1. Transfer ignored artifact mirrors outside Git if local analysis is needed on
    the next workstation.
 2. Run `make check` after checkout and after any artifact transfer.
-3. Analyze and write reports for AWS EXP-01 through EXP-09.
-4. Analyze and write reports for Runpod EXP-10, EXP-11, and EXP-13.
+3. Review the interim reports and RAG history for AWS EXP-01 through EXP-09,
+   then promote them to final validated reports when ready.
+4. Review the interim reports and RAG history for Runpod EXP-10, EXP-11, and
+   EXP-13, then promote them to final validated reports when ready.
 5. Publish a refreshed Runpod NeMo image that includes the committed NCCL
    cleanup fix before any future rerun.

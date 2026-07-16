@@ -32,10 +32,11 @@ AWS_A2_MEGATRON_QUEUE_CONFIRM_ARG = $(if $(CONFIRM),--confirm "$(CONFIRM)",)
 RUNPOD_A2_MEGATRON_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 RUNPOD_A4_MEGATRON_QUEUE_RUN_ARG = $(if $(RUN_ID),--run-id $(RUN_ID),)
 
-.PHONY: help check new-experiment prepare-environment prepare-inputs verify-inputs exp-a1-dry-run exp-a2-dry-run exp-a2-megatron-dry-run exp-runpod-megatron-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts aws-a1-preflight aws-a1-launch-dry-run aws-a1-status aws-a1-host-shell aws-a1-container-shell aws-a1-host-command aws-a1-container-command aws-a1-logs aws-a1-monitor aws-a1-artifacts aws-a1-queue-plan aws-a1-queue-script aws-a1-queue-run aws-a2-queue-plan aws-a2-queue-script aws-a2-queue-launch-dry-run aws-a2-queue-launch aws-a2-queue-run aws-a2-megatron-queue-plan aws-a2-megatron-queue-script aws-a2-megatron-queue-launch-dry-run aws-a2-megatron-queue-launch aws-a2-megatron-queue-run runpod-a2-megatron-queue-plan runpod-a2-megatron-queue-script runpod-a2-megatron-pod-create-command runpod-a4-megatron-queue-plan runpod-a4-megatron-queue-script runpod-a4-megatron-pod-create-command
+.PHONY: help check new-experiment experiment-history prepare-environment prepare-inputs verify-inputs exp-a1-dry-run exp-a2-dry-run exp-a2-megatron-dry-run exp-runpod-megatron-dry-run build-pytorch-image build-nemo-image aws-ssm-plugin-check aws-exp01-preflight aws-exp01-launch-dry-run aws-exp01-status aws-exp01-host-shell aws-exp01-container-shell aws-exp01-host-command aws-exp01-container-command aws-exp01-logs aws-exp01-monitor aws-exp01-artifacts aws-a1-preflight aws-a1-launch-dry-run aws-a1-status aws-a1-host-shell aws-a1-container-shell aws-a1-host-command aws-a1-container-command aws-a1-logs aws-a1-monitor aws-a1-artifacts aws-a1-queue-plan aws-a1-queue-script aws-a1-queue-run aws-a2-queue-plan aws-a2-queue-script aws-a2-queue-launch-dry-run aws-a2-queue-launch aws-a2-queue-run aws-a2-megatron-queue-plan aws-a2-megatron-queue-script aws-a2-megatron-queue-launch-dry-run aws-a2-megatron-queue-launch aws-a2-megatron-queue-run runpod-a2-megatron-queue-plan runpod-a2-megatron-queue-script runpod-a2-megatron-pod-create-command runpod-a4-megatron-queue-plan runpod-a4-megatron-queue-script runpod-a4-megatron-pod-create-command
 
 help:
 	@echo "make check"
+	@echo "make experiment-history"
 	@echo "make build-pytorch-image [PYTORCH_IMAGE=multi-gpu-training-pytorch:local]"
 	@echo "make build-nemo-image [NEMO_IMAGE=multi-gpu-training-nemo:local]"
 	@echo "make aws-ssm-plugin-check"
@@ -88,11 +89,14 @@ help:
 	@echo "make exp-runpod-megatron-dry-run"
 
 check:
-	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py infra/aws/a1_queue.py infra/aws/a2_queue.py infra/runpod/runpod_queue.py common/experiment_runner.py common/pytorch_executor.py common/megatron_executor.py common/qualification/aws_gpu_smoke.py common/qualification/runpod_gpu_smoke.py experiments/_template/analyze.py experiments/exp_*/analyze.py experiments/exp_*/run_exp*.py
+	$(PYTHON) -m py_compile scripts/new_experiment.py scripts/prepare_inputs.py scripts/validate_repo.py scripts/build_experiment_history.py infra/aws/exp01_preflight.py infra/aws/exp01_launch.py infra/aws/exp01_ops.py infra/aws/a1_queue.py infra/aws/a2_queue.py infra/runpod/runpod_queue.py common/experiment_runner.py common/pytorch_executor.py common/megatron_executor.py common/qualification/aws_gpu_smoke.py common/qualification/runpod_gpu_smoke.py experiments/_template/analyze.py experiments/exp_*/analyze.py experiments/exp_*/run_exp*.py
 	$(PYTHON) scripts/new_experiment.py --help
 	$(PYTHON) -m unittest discover -s tests
 	$(PYTHON) scripts/validate_repo.py
 	git diff --check
+
+experiment-history:
+	$(PYTHON) scripts/build_experiment_history.py
 
 new-experiment:
 	@test -n "$(ID)" || (echo "ID is required, for example ID=EXP-01"; exit 2)

@@ -12,6 +12,7 @@ the NCP-GENL certification.
 | [HANDOFF.md](HANDOFF.md) | Current workstation-transition state, local-only assets, blockers, and receiving-Codex instructions | Operational snapshot; replace at the next explicit handoff |
 | [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md) | Current snapshot and history of accepted project scope, infrastructure, frameworks, workload rules, exclusions, container strategy, tools, and reproducibility requirements | Authoritative for project-wide decisions |
 | [EXPERIMENT_CATALOG.md](EXPERIMENT_CATALOG.md) | Experiment candidates, lifecycle status, hypotheses, scenarios, measurements, estimated GPU-hours, and implementation order | Authoritative for experiment definitions and status |
+| [docs/experiment_history/README.md](docs/experiment_history/README.md) | RAG-friendly per-experiment history generated from specs, reports, and local artifact mirrors; includes goals, run IDs, extracted metrics, conclusions, and operational anomalies | Derived cross-workstation analysis memory |
 | [infra/TOOLING.md](infra/TOOLING.md) | Dated per-workstation operational audit of installed tools, authentication readiness, and remaining provider checks | Informational; does not change project decisions |
 
 This README is only the repository entry point; it intentionally does not copy
@@ -29,6 +30,7 @@ within those constraints.
 ├── configs/               # Shared workload/configuration examples
 ├── containers/            # PyTorch and NeMo/Megatron image definitions
 ├── data/                  # Dataset preparation contract; downloaded data is ignored
+├── docs/                  # Derived RAG-friendly experiment history and other documentation
 ├── experiments/           # Accepted experiment directories and canonical template
 ├── infra/                 # Provider-neutral contract plus AWS and Runpod adapters
 ├── scripts/               # Local automation and experiment scaffolding
