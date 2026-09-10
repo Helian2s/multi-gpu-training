@@ -13,6 +13,12 @@ conflicts with `PROJECT_DECISIONS.md` or `EXPERIMENT_CATALOG.md`, those
 authoritative files govern. Replace this file at the next explicit workstation
 handoff instead of accumulating a historical log here.
 
+This snapshot describes the Ubuntu workstation and provider observations as of
+2026-07-16. Local artifact and cloud-resource references below are historical.
+Before promoting reports, read the subsequent
+[2026-09-10 source review](docs/validation-status.md), which identifies
+correctness and scope issues beyond the pending report work listed here.
+
 ## Receiving Codex instructions
 
 1. Read `AGENTS.md`, `WORKFLOW.md`, `README.md`, this file,

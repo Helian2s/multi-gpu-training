@@ -37,6 +37,11 @@ provider-side GPU smoke test even if the local build succeeds.
 
 ## Starting a session
 
+Install the [minimal local-check dependencies](tests/README.md) before running
+checks on a fresh workstation. `make check` uses `python3` by default; if using
+the repository virtual environment, run `make check PYTHON=.venv/bin/python`
+instead. The same `PYTHON` override applies to plan-generation targets.
+
 Start Codex at the repository root. Before making changes, inspect the shared
 state:
 
@@ -51,11 +56,13 @@ make check
 Then read:
 
 1. `AGENTS.md` for durable working and safety rules.
-2. `README.md` for the document map and repository layout.
+2. `README.md` for the project overview and `docs/README.md` for document roles.
 3. `HANDOFF.md` for current local-only assets, blockers, and the next action.
 4. `PROJECT_DECISIONS.md` for accepted constraints.
 5. The relevant part of `EXPERIMENT_CATALOG.md` for the current task.
 6. `infra/TOOLING.md` for the current machine's known readiness.
+7. `docs/validation-status.md` for later source-review findings that affect
+   interpretation of the recorded experiments.
 
 Do not infer that another workstation's successful check applies here. Audit a
 new workstation once and update only its section in `infra/TOOLING.md`.

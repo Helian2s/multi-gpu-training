@@ -1,6 +1,7 @@
 # Tooling readiness
 
-Last checked: 2026-07-16
+Local analysis checks: 2026-09-10
+Last recorded provider checks: 2026-07-16
 
 This is a per-workstation operational status record, not a project-decision
 log. The approved toolset is maintained in `PROJECT_DECISIONS.md`; this file
@@ -13,6 +14,23 @@ value here.
 Role: documentation, source changes, input preparation, analysis, and
 lightweight cross-platform container work. Large `linux/amd64` NVIDIA image
 builds should normally move to the Ubuntu workstation.
+
+### Local analysis refresh — 2026-09-10
+
+The current checkout is Darwin ARM64. `/usr/local/bin/python3.12` is Python
+3.12.4 with PyYAML 6.0.2; `make check PYTHON=/usr/local/bin/python3.12` passed
+all 41 tests and repository validation. The default `python3` is Python 3.14.7
+without PyYAML, so plain `make check` fails to import the YAML-dependent tests.
+Use an explicit interpreter or the minimal environment in
+[tests/README.md](../tests/README.md).
+
+This checkout has no `.venv`, prepared `data/processed/`, or `artifacts/runs/`
+mirrors. Earlier input-readiness claims below do not apply to this checkout.
+Provider credentials, Docker/registry access, and live resource state were not
+rechecked during the documentation review. The table below preserves the prior
+macOS audit; its tool versions and cloud readiness are historical observations.
+
+### Prior workstation audit
 
 | Capability | Tool/status | Readiness |
 | --- | --- | --- |

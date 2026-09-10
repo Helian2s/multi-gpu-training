@@ -27,6 +27,12 @@ governs experiments.
 
 ## Purpose
 
+The [portfolio overview](README.md) describes the work implemented and run.
+The [2026-09-10 validation review](docs/validation-status.md) records gaps
+between these accepted decisions and the current implementation, including the
+synthetic parallelism workloads. Those findings do not amend the accepted
+contract or the decision history below.
+
 This repository is an experimental lab for the **GPU Acceleration and
 Optimization** domain of the NVIDIA Certified Professional: Generative AI LLMs
 (NCP-GENL) certification. The experiments should turn the expected behavior

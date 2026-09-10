@@ -1,34 +1,28 @@
-# NeMo/Megatron Image
+# NeMo/Megatron runtime
 
-`Dockerfile` builds the local candidate NeMo/Megatron runtime from the inspected
-immutable NGC NeMo `linux/amd64` digest. It preserves the NVIDIA-pinned
-framework stack and sets the explicit Python path required for `nemo`,
-`megatron.core`, and `megatron.bridge` imports.
+The [Dockerfile](Dockerfile) packages the synthetic parallelism executors inside
+a pinned NVIDIA NeMo environment. It preserves the NVIDIA framework stack,
+sets import paths, builds `p2pBandwidthLatencyTest`, and adds SSH/rsync support
+for Runpod operation.
 
-The image also builds and installs NVIDIA CUDA Samples
-`p2pBandwidthLatencyTest` at a pinned revision so the same Runpod NeMo image can
-run EXP-10 communication qualification before EXP-11/EXP-13 model-parallel
-measurements on the same two-GPU Pod. The sample build defaults to
-`CUDA_SAMPLES_ARCHITECTURES=80`, matching the A100 SXM target.
+EXP-12 used this image family on AWS. EXP-10, EXP-11, EXP-13, and EXP-14 used a
+CUDA 12.8-compatible build on Runpod. Their framework versions and immutable
+image digests are recorded in [the reports](../../experiments/README.md).
 
-For Runpod Pods, the image keeps the NVIDIA base entrypoint and sets
-`/usr/local/bin/runpod_start` as the default command. That command configures
-the injected Runpod SSH public key, starts `sshd`, exports environment variables
-for interactive shells, and then sleeps in the foreground so the Pod remains
-available for manual queue launch and artifact copy-out.
+The current executors import Megatron modules for environment checks and then
+run custom PyTorch distributed workloads. They are not full Qwen Megatron
+Bridge recipes; see [validation status](../../docs/validation-status.md).
 
-Build locally with:
+## Local builds
+
+From the repository root, the default pinned NeMo 26.06 base is selected by:
 
 ```bash
 make build-nemo-image
 ```
 
-The local tag is `multi-gpu-training-nemo:local`. It is not a recorded
-experiment image until provider-side GPU qualification passes and the same
-content is pushed to ECR and GHCR with immutable digest records.
-
-The default base is the accepted NeMo 26.06 image. Runpod hosts with NVIDIA
-driver 570 / CUDA 12.8 need the CUDA 12.8-compatible NeMo 25.04 base instead:
+The July Runpod phase used a CUDA 12.8-compatible NeMo 25.04 base. To build that
+base variant with the current source:
 
 ```bash
 make build-nemo-image \
@@ -36,3 +30,19 @@ make build-nemo-image \
   CUDA_SAMPLES_ARCHITECTURES=80 \
   NEMO_IMAGE=multi-gpu-training-nemo:runpod-cuda128-local
 ```
+
+Both commands load a local `linux/amd64` image without publishing it. The CUDA
+Samples target defaults to architecture 80 for the A100 profile; select and
+qualify build settings for the actual target hardware before execution.
+
+## Runpod startup and cleanup
+
+[runpod_start.sh](runpod_start.sh) configures the injected SSH public key,
+starts `sshd`, exposes the environment to interactive shells, and keeps the
+Pod available for manual queue execution and artifact copy-out. It does not
+start an experiment queue automatically.
+
+The successful EXP-14 run hotpatched the executor to skip explicit NCCL
+process-group destruction after metrics were written. The source now contains
+that fix, but the historical GHCR image does not. A replacement image needs
+publication and provider qualification before future reproducibility runs.

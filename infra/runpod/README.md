@@ -1,89 +1,72 @@
-# Runpod adapter plan
+# Runpod execution tooling
 
-Runpod supplies the A100 SXM NVLink environment that the AWS G7e profiles do not
-provide. It hosts the Runpod communication baseline and the remaining
-NeMo/Megatron experiments in the current catalog. It is not a silent general
-fallback for AWS; broader Runpod use requires updating the planned compute
-mapping.
+The Runpod phase used A100-SXM4-80GB GPUs for NVLink communication and synthetic
+parallelism workloads. Both queues ran in the CUDA 12.8-compatible
+NeMo/Megatron image, so communication qualification and the synthetic workloads
+could share a Pod without changing images.
 
-The active Runpod execution queues are:
+## Queues used
 
-| Queue | Resource profile | Purpose |
-| --- | --- | --- |
-| `RUNPOD-A2-Megatron` | `RUNPOD-A100-SXM2` with one or two visible GPUs | Provider readiness, GHCR/storage validation, two-GPU qualification, EXP-10 NVLink/NCCL baseline, and EXP-11/EXP-13 one-/two-visible-GPU NeMo/Megatron phases |
-| `RUNPOD-A4-Megatron` | `RUNPOD-A100-SXM4` | EXP-14 four-GPU TP=2 x DP=2 hybrid |
+| Queue | Physical GPUs | Experiments |
+| --- | ---: | --- |
+| RUNPOD-A2-Megatron | 2 | EXP-10 communication; EXP-11 TP/SP and EXP-13 CP with 1/2-visible-GPU phases |
+| RUNPOD-A4-Megatron | 4 | EXP-14 DP=4, TP=4, and TP=2 × DP=2 |
 
-The `RUNPOD-A*` labels are execution queue labels. The suffix names the image
-and framework family, while the resource profile records the exact rented Pod.
-Every run still records the exact Runpod resource profile, GPU type, billed GPU
-count, visible GPU count, datacenter, Pod ID, topology, visible mask, image
-family, image digest, and billed resource.
+Both profiles select Runpod Secure Cloud and the exact GPU type
+`NVIDIA A100-SXM4-80GB`. Every run remains on one host. The recorded topology
+was `NV12`; GPU names alone are not qualification evidence, and `NV12` alone
+is not a claim that a particular NVSwitch fabric was verified.
 
-## Accepted profiles
+## What the tooling implements
 
-`RUNPOD-A100-SXM2` means:
+[runpod_queue.py](runpod_queue.py) validates queue configuration and generates
+plans, container scripts, and a `runpodctl pod create` command. It does not
+execute the generated creation command. The image startup script enables SSH
+and keeps the Pod available for an operator to launch the queue.
 
-- Runpod Secure Cloud Pod, not an Instant Cluster or multi-node deployment.
-- One physical host with two rented GPUs.
-- Exact Runpod GPU type ID `NVIDIA A100-SXM4-80GB`.
-- One or two visible GPUs selected by a container visibility mask.
-- Qualification evidence showing NVLink between every GPU pair used by a
-  measured process group. NVSwitch is recorded only when the observed topology
-  proves it.
+The configurations are [a2_megatron_queue.yaml](a2_megatron_queue.yaml) and
+[a4_megatron_queue.yaml](a4_megatron_queue.yaml). From the repository root:
 
-It is used by `RUNPOD-A2-Megatron` for qualification, EXP-10, EXP-11, and
-EXP-13. A one-visible-GPU phase still pays for both GPUs when it runs on this
-two-GPU Pod, so the full resource cost is recorded. The current EXP-10 path
-uses CUDA/NCCL tools inside the NeMo/Megatron image so the two-GPU Pod does not
-need nested Docker or an image switch.
+```bash
+make runpod-a2-megatron-queue-plan PYTHON=.venv/bin/python
+make runpod-a4-megatron-queue-plan PYTHON=.venv/bin/python
+make runpod-a2-megatron-queue-script PYTHON=.venv/bin/python RUN_ID=review-a2
+make runpod-a4-megatron-pod-create-command PYTHON=.venv/bin/python RUN_ID=review-a4
+```
 
-`RUNPOD-A100-SXM4` has the same requirements with four rented and visible GPUs.
-It is used only by `RUNPOD-A4-Megatron` / EXP-14 because TP=2 x DP=2 requires
-four ranks.
+These commands print local plans or shell text. Running the printed Pod
+creation command is a separate, billable action requiring explicit approval.
+Its registry credential reference belongs to the original environment and
+must be replaced with an authorized local configuration for another account.
 
-## Immediate preparation gates
+## Storage and lifetime
 
-Before a paid Runpod Pod is launched:
+The checked-in queues use Pod volume storage mounted at `/runpod-volume`,
+with no network-volume ID. Artifacts are copied by the operator to
+`artifacts/runs/runpod-volume-mirror/` before Pod deletion. The
+[artifact guide](../../artifacts/README.md) describes the mirror layout.
 
-1. Rotate the previously exposed Runpod API key outside chat and Git.
-2. Install and configure `runpodctl` locally, then run `runpodctl doctor`.
-3. Publish the NeMo/Megatron image to GHCR and record the immutable digest.
-4. Configure GHCR pull-only access for Runpod; do not store AWS credentials in
-   Runpod.
-5. Use Pod volume disk for working artifacts and copy the completed artifacts
-   back to `artifacts/runs/runpod-volume-mirror/` before deleting the Pod.
-6. Define launch guards for maximum lifetime/cost, durable stage-out, and
-   stop/delete behavior on success and failure.
+The generated Pod creation command contains a termination deadline calculated
+when the command is generated. Generate a fresh command immediately before an
+authorized launch. Each run unit also has a timeout.
 
-## Planned implementation
+The container script does not call the provider to stop or delete the Pod.
+`stop_on_success=true` prints an instruction to the operator; the inspection
+interval is not an automatic stop timer. Artifact copy-out and early shutdown
+remain manual, including after failures. Preserve and verify artifacts before
+the hard deadline rather than relying on Pod storage surviving deletion.
 
-- **Compute:** one Runpod Pod on one physical host, provisioned and inspected
-  through `runpodctl` or the Runpod API.
-- **Run storage:** Pod volume disk mounted at `/runpod-volume`; it is not
-  durable after Pod deletion, so copy artifacts to the ignored local mirror
-  before deleting the Pod.
-- **Staging:** container storage for performance-sensitive temporary files.
-- **Images:** the immutable GHCR mirror of the NeMo/Megatron image content; use
-  read-only GHCR registry credentials.
-- **Visibility:** use the exact two- or four-GPU profile. Only the two-GPU
-  profile masks one device for controlled one-GPU TP/PP/CP baselines. Record
-  both physical and visible device sets for every run.
-- **Cost safety:** maximum Pod lifetime, verified artifact collection, and stop
-  or delete handling in success and failure paths.
+## Recorded results and remaining work
 
-Network-volume placement can constrain Pod selection to one datacenter. The
-current Runpod queues intentionally avoid network volumes so the Pod can launch
-wherever the required A100 SXM topology is available. If network volumes are
-reintroduced, the adapter must report that placement constraint rather than
-silently changing GPU type or topology. See the [Runpod network-volume documentation](https://docs.runpod.io/storage/network-volumes).
+The July records include EXP-10/11/13 artifacts and a completed EXP-14 report.
+The first EXP-14 attempt hung during NCCL cleanup. A rerun used a container-side
+hotpatch to skip explicit process-group destruction; that fix is now in source.
+Publish a replacement immutable image before future reproducibility runs.
 
-Runpod has no EC2-style instance-type identifier. Preserve the cloud class,
-datacenter, Pod ID, exact GPU type ID, GPU count, host/topology output, CPU/RAM,
-storage, and price as the resource identity. The official GPU table names the
-required type `NVIDIA A100-SXM4-80GB`; Runpod's A100 SXM product page documents
-80 GB memory and NVLink capability.
+The synthetic TP/SP/CP/hybrid paths have correctness issues described in
+[validation status](../../docs/validation-status.md). Their recorded performance
+is not yet evidence of equivalent full-model training.
 
-## Official sources
-
-- [Runpod GPU types](https://docs.runpod.io/references/gpu-types)
-- [Runpod A100 SXM](https://www.runpod.io/gpu-models/a100-sxm)
+Provider access, image availability, account limits, capacity, and prices must
+be checked again before another launch. [TOOLING.md](../TOOLING.md) and
+[HANDOFF.md](../../HANDOFF.md) contain dated observations, not live Pod state.

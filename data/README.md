@@ -1,37 +1,54 @@
-# Dataset workspace
+# Model and dataset preparation
 
-Dataset code and metadata are tracked; downloaded or generated data are not.
+[prepare_inputs.py](../scripts/prepare_inputs.py) prepares the accepted
+**Qwen3-1.7B-Base** model/tokenizer and **WikiText-103 raw** train, validation,
+and test splits. Exact revisions and preprocessing rules live in
+[inputs.lock.yaml](../configs/inputs.lock.yaml).
 
-The accepted end-to-end input workload uses the `Salesforce/wikitext`
-`wikitext-103-raw-v1` splits and the tokenizer distributed with
-`Qwen/Qwen3-1.7B-Base`. Exact revisions and the preprocessing contract are
-pinned in `../configs/inputs.lock.yaml`. The preparation pipeline:
+## Implemented pipeline
 
-1. Download exact model, tokenizer, and dataset revisions.
-2. Preserve license and attribution metadata.
-3. Tokenize deterministically and insert EOS between documents.
-4. Concatenate the records into one canonical token stream per source split;
-   fixed-length experiment samples are deterministic slices of that stream.
-5. Write a manifest containing revisions, parameters, counts, and content
-   hashes.
-6. Expose identical sample IDs and token sequences to PyTorch and Megatron
-   loaders.
+1. Fetch the pinned model, tokenizer, and dataset snapshots.
+2. Tokenize source records in order and append one EOS to each non-empty record.
+3. Preserve empty records in the document index without adding tokens.
+4. Write a canonical token stream, document offsets, and document hashes for
+   each split.
+5. Inventory downloaded and processed files with sizes and SHA-256 checksums
+   in a manifest.
 
-Use `raw/` for immutable fetched inputs, `processed/` for canonical token
-streams, and `cache/` or `downloads/` for disposable transfer caches. These
-directories are ignored by Git. Durable copies live in S3 for AWS or on a
-Runpod network volume; performance-sensitive working copies may be staged to
-EC2 instance-store/EBS or Pod-local storage.
+Tokens use little-endian `uint32`; document offsets use little-endian `uint64`.
+The PyTorch training executor slices fixed-length samples from the train stream.
+The current synthetic parallelism executor generates tensors directly and does
+not consume this dataset or the Qwen checkpoint.
 
-Run `make prepare-environment` once and then `make prepare-inputs`. Empty source
-rows are retained in the document offset/hash index but contribute no tokens;
-non-empty records receive one EOS. Processed output contains little-endian
-`uint32` token streams, `uint64` document offsets, per-document SHA-256 values,
-and a manifest with source/output checksums. Model, dataset, and generated files
-are intentionally not committed.
+## Prepare or verify inputs
 
-After transferring `raw/` and `processed/` to another workstation, recreate the
-local environment with `make prepare-environment` and run `make verify-inputs`.
-Verification reads every transferred source and output file and compares its
-size and SHA-256 value with the generated manifest; it performs no download or
-preprocessing.
+The full preparation environment is separate from the minimal local-check
+setup. From the repository root:
+
+```bash
+make prepare-environment
+make prepare-inputs
+make verify-inputs
+```
+
+`make prepare-environment` creates or extends `.venv` using Python 3.12 and
+[requirements-preparation.txt](../requirements-preparation.txt).
+`make prepare-inputs` downloads model/data assets and writes processed files;
+allow disk space for both source snapshots and generated outputs.
+
+`make verify-inputs` checks every inventoried file against its size and checksum
+without downloading or preprocessing again. Run it after transferring inputs
+between workstations or before staging them to a GPU host. Runtime presence
+checks alone do not verify the complete input inventory.
+
+## Storage and reproducibility
+
+Downloaded assets under `raw/` and generated assets under `processed/` are
+ignored by Git. A clone contains the preparation code and lock file, not these
+assets. The July AWS queues staged inputs from S3; exact locations are recorded
+in provider configuration and [the handoff](../HANDOFF.md).
+
+The preprocessing contract makes source token streams reproducible. Training
+sample partitioning and label alignment have separate known issues documented
+in [validation status](../docs/validation-status.md); input checksum success
+does not resolve them.

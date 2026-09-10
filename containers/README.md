@@ -1,31 +1,50 @@
-# Container images
+# GPU runtime images
 
-The project maintains two independent `linux/amd64` image families:
+The project includes two `linux/amd64` image families built from pinned NVIDIA
+NGC bases. They package the experiment code and GPU tooling before renting a
+host, keeping environment setup separate from measured execution.
 
-- `pytorch/` for native PyTorch, DDP, FSDP, collectives, kernels, and profiling.
-- `nemo/` for NeMo Framework and Megatron Core model-parallel experiments.
+| Family | Contents and use | Build guide |
+| --- | --- | --- |
+| PyTorch | Native training, DDP/FSDP, GEMM/attention benchmarks, profiling, and AWS communication tools | [pytorch/](pytorch/README.md) |
+| NeMo/Megatron | NVIDIA framework stack, synthetic parallelism executors, P2P tooling, and Runpod SSH startup | [nemo/](nemo/README.md) |
 
-Do not add a Dockerfile until its NGC base release and dependency versions are
-selected and compatibility-tested together. Keep exact pins in the Dockerfile
-and dependency lock files, with a short compatibility record; do not duplicate
-those implementation details in `PROJECT_DECISIONS.md`.
+The Dockerfiles record source/build metadata and pin the NGC base plus the CUDA
+Samples revision. Additional PyTorch-image Python packages are pinned in
+[pytorch/requirements-runtime.txt](pytorch/requirements-runtime.txt).
+[Base-image compatibility notes](base-image-compatibility.md) preserve the
+historical inspection record.
 
-Current local base-image inspection is recorded in
-[base-image-compatibility.md](base-image-compatibility.md). That record admits
-candidate bases for Dockerfile design but does not replace provider-side GPU
-qualification or final project image digest recording.
+## Build locally
 
-Each image is built once and published to two private registries:
+From the repository root with Docker and Buildx available:
 
-```text
-<aws-account-id>.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-pytorch:<version>
-<aws-account-id>.dkr.ecr.us-west-2.amazonaws.com/multi-gpu-training-nemo:<version>
-ghcr.io/<github-owner>/multi-gpu-training-pytorch:<version>
-ghcr.io/<github-owner>/multi-gpu-training-nemo:<version>
+```bash
+make build-pytorch-image
+make build-nemo-image
 ```
 
-AWS pulls the ECR references through an instance role. Runpod pulls the GHCR
-mirrors through read-only registry credentials. Recorded experiments use an
-immutable per-registry digest, never only a mutable tag. The build record must
-show that both references came from the same build rather than rebuilding for
-each provider.
+These targets build and load local images; they do not publish them. Large
+native builds were performed on Ubuntu x86_64. macOS ARM64 can inspect source
+and build through emulation, but a local image build does not validate CUDA.
+
+## Registry and run identity
+
+AWS runs pulled from private ECR; Runpod runs pulled from GHCR. Each recorded
+run identifies its image by immutable digest. The project policy is to verify
+identical content when mirroring one build between registries. That does not
+make images from different builds equivalent: the July AWS and Runpod NeMo
+runs used different base/runtime versions, recorded in their reports.
+
+A locally rebuilt image has its own identity. Record the exact source state,
+base, dependencies, and resulting digest, then perform provider-side GPU
+qualification before measured use. Publishing an image requires authorization.
+
+## Historical availability
+
+The [July handoff](../HANDOFF.md) records deletion of the AWS ECR images on
+2026-07-16. The published Runpod image used for EXP-14 also predates the
+committed NCCL cleanup fix; that run used a container-side hotpatch. Neither
+an old digest in YAML nor a successful local build establishes rerun readiness.
+See [validation status](../docs/validation-status.md) and
+[provider readiness](../infra/TOOLING.md) before preparing another run.

@@ -1,8 +1,14 @@
-# Proposed experiment catalog
+# Experiment catalog
 
-Document status: Planning worksheet; numbered experiments use per-row lifecycle status
-Last updated: 2026-07-15
+Document status: Experiment definitions and execution record; lifecycle status is tracked per row
+Experiment state last updated: 2026-07-15
+Documentation reviewed: 2026-09-10
 Governing decisions: [PROJECT_DECISIONS.md](PROJECT_DECISIONS.md)
+
+For a concise account of the work performed, start with the
+[experiment guide](experiments/README.md). The
+[source review](docs/validation-status.md) records later correctness findings
+that must be considered alongside the historical results and completion labels.
 
 ## Document role and authority
 
@@ -19,14 +25,15 @@ takes precedence.
 
 ## Purpose
 
-This document is the decision worksheet for selecting the experiments to
-implement. It translates the Ultra-Scale Playbook and the GPU Acceleration and
-Optimization portion of NCP-GENL into experiments that fit the governing
-project decisions.
+This document defines the experiments and preserves their selection and
+execution state. The questions draw on the Ultra-Scale Playbook and the GPU
+Acceleration and Optimization portion of NCP-GENL. All 14 current experiments
+have recorded executions; report validation remains pending for 12 of them.
 
 The numbered rows begin with `Status=proposed`. Change an experiment to
-`accepted` or `deferred` during review; use `completed` only after its report is
-finished. Only accepted experiments receive an implementation directory.
+`accepted` or `deferred` during review; use `completed` only after the required
+artifacts and report have been validated. Only accepted experiments receive an
+implementation directory.
 Canonical IDs `EXP-01` through `EXP-14` define the learning order. Execution is
 organized by the active queues `AWS-A1-PyTorch`, `AWS-A2-PyTorch`,
 `AWS-A2-Megatron`, `RUNPOD-A2-Megatron`, and `RUNPOD-A4-Megatron`; Runpod preparation can proceed while AWS capacity is
